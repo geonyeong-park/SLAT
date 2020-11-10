@@ -1,0 +1,41 @@
+exp_setting:
+  exp_name: ''
+  snapshot_dir: 'snapshots'
+  log_dir: 'log'
+  use_tensorboard: True
+  log_every_n_steps: 200
+  save_every_n_epochs: 10
+
+
+dataset:
+  name: 'MNIST'
+  MNIST:
+    name: 'MNIST'
+    batch_size: 256
+    input_size: 32
+    channel: 1
+    num_cls: 10
+    num_workers: 1
+  SVHN:
+    name: 'SVHN'
+    batch_size: 128
+    input_size: 32
+    channel: 3
+    num_cls: 10
+    num_workers: 1
+
+model:
+  structure: 'FC' # FC, NormalFC
+  add_noise: True # For NormalFC
+  FC:
+    module: [512, 256, 128]
+    noise_L: True
+
+train:
+  num_epochs: 200
+  ld: 0.001
+optimizer:
+  momentum: 0.9
+  lr: 0.001
+  weight_decay: 0.0005
+  lr_decay: 0.99
