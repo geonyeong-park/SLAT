@@ -43,6 +43,7 @@ class GenByNoise(object):
         self.log_loss['train_noise_loss'] = []
         self.log_loss['val_acc'] = []
         self.log_loss['val_loss'] = []
+        self.log_loss['val_KL'] = []
         self.ld = config['train']['ld']
         self.val_epoch = 1
 
@@ -175,6 +176,32 @@ class GenByNoise(object):
         print('[{}/{}]: Acc={:.3f}, Loss={:.3f}, LR={:.5f}'.format(epoch, n_iter,
                                                        valid_acc, valid_loss, self.theta_scheduler.get_lr()[0]))
 
+    def _KL_div(self):
+        _, self.clean_valid_loader = self.dataset.get_data_loaders()
+        with torch.no_grad():
+            self.model.eval()
+
+            KL_diff = 0.
+            counter = 0
+
+            for (x_noise, _), (x_clean, _) in zip(self.valid_loader, self.clean_valid_loader):
+                x_noise = x_noise.to(self.device)
+                x_clean = x_clean.to(self.device)
+
+                logit_noise, _ = self.model(x_noise)
+                logit_clean, _ = self.model(x_clean)
+
+                yhat_noise = nn.Softmax(dim=1)(logit_noise)
+                yhat_clean = nn.Softmax(dim=1)(logit_clean)
+
+                KL_diff += nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
+                counter += x_noise.data.size()[0]
+
+            KL_diff /= counter
+            self.log_loss['val_KL'].append(KL_diff)
+            print('KL difference between clean and noisy data: {}'.format(KL_diff))
+
+
     def test(self, checkpoint):
         self.model.load_state_dict(checkpoint['model'])
         self.model.eval()
@@ -186,6 +213,7 @@ class GenByNoise(object):
             _, self.valid_loader = self.dataset.get_data_loaders(var)
             print('[Test] Variance of input noise={}'.format(var))
             self._validation(None, None, False)
+            self._KL_div()
 
         with open(os.path.join(self.log_dir, 'Robust_to_noise_test.pkl'), 'wb') as f:
             pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
@@ -203,7 +231,6 @@ class GenByNoise(object):
         pc = pca.fit_transform(logit.data.cpu().numpy())
         plot_embedding(pc, label.data.cpu().numpy(), sample_path('PCA'))
         print('Plot tSNE and PCA results')
-
 
 
 

@@ -12,6 +12,7 @@ import imageio
 import os
 from skimage import img_as_ubyte
 import pickle as pkl
+import argparse
 
 def plot_embedding(X, y, save_path, title=None):
     """Plot an embedding X with the class label y colored by the domain d."""
@@ -36,53 +37,84 @@ def plot_embedding(X, y, save_path, title=None):
     plt.close('all')
 
 
-def plot_figure(dataset, ylim):
-    with open('Ablation_Align_{}/50000_log.pkl'.format(dataset), 'rb') as f:
-        align = pkl.load(f)
-    with open('Ablation_noAlign_{}/50000_log.pkl'.format(dataset), 'rb') as f:
-        no_align = pkl.load(f)
-    with open('Ablation_vanila_{}/50000_log.pkl'.format(dataset), 'rb') as f:
-        vanila = pkl.load(f)
-    with open('Ablation_multiD_{}/50000_log.pkl'.format(dataset), 'rb') as f:
-        multiD = pkl.load(f)
-    """
-    with open('{}_50000_log.pkl'.format(dataset.lower()), 'rb') as f:
-        mdan = pkl.load(f)
-        mdan = [x*100 for x in mdan]
-    with open('Ablation/Ablation_GRL_Adam_{}/50000_log.pkl'.format(dataset), 'rb') as f:
-        grl = pkl.load(f)
-    with open('Ablation/Ablation_sourceonly_{}/25000_log.pkl'.format(dataset), 'rb') as f:
-        sourceonly = pkl.load(f)
-    with open('Ablation/{}_50000_log.pkl'.format(dataset.lower()), 'rb') as f:
-        mdan = pkl.load(f)
-    """
+def plot_acc(dataset, ylim):
+    log_path = lambda x: 'log/{}/Robust_to_noise_test.pkl'.format(x)
 
-    acc = [align['target_acc'], no_align['target_acc'], vanila['target_acc'], multiD['target_acc']]
+    with open(log_path('MNIST_test'), 'rb') as f:
+        adv_noise = pkl.load(f)
+    with open(log_path('MNIST_normal_noiseO'), 'rb') as f:
+        gauss_noise = pkl.load(f)
+    with open(log_path('MNIST_normal_noiseX'), 'rb') as f:
+        no_noise = pkl.load(f)
 
-    step = [1000*(i+1) for i in range(50)]
-    color=['salmon', 'chocolate','darkorange', 'royalblue']
+    acc = [adv_noise['val_acc'], gauss_noise['val_acc'], no_noise['val_acc']]
+
+    step = [0., 0.2, 0.4, 0.6, 0.8, 1.0]
+    color=['salmon', 'green','royalblue']
     for i, data in enumerate(acc):
-        print(len(data))
-        if i != len(acc)-1 and i != len(acc)-2:
-            idx = np.array([i*10 for i in range(len(data) // 10)]).astype(int)
-            plt.plot(step, np.array(data)[idx], color=color[i], linestyle='-.')
-        else:
-            plt.plot(step, np.array(data), color=color[i], linestyle='-.')
+        plt.plot(step, np.array([x.data.cpu().numpy() for x in data]), color=color[i], linestyle='-.')
 
-    plt.xlabel('Number of Steps (x1e3)')
+    plt.xlabel('Variance of input noise')
     plt.ylabel('Accuracy (%)')
-    plt.xticks([10000, 20000, 30000, 40000, 50000], ['10','20','30','40','50'])
+    plt.xticks(step, [str(i) for i in step])
     plt.ylim([ylim,None])
     plt.minorticks_on()
     plt.grid(True, linestyle='--')
-    dataset_title = 'MNIST-M' if dataset == 'MNIST' else dataset
-    plt.title('{}'.format(dataset_title))
-    plt.legend(['MIAN', 'MIAN(No S-S align)', 'MIAN(No LS)', 'Multi_D'])
-    plt.savefig('{}.png'.format(dataset))
+    plt.title('{}'.format(dataset))
+    plt.legend(['Adversarial Noise', 'Gaussian Noise', 'Baseline'])
+    plt.savefig('{}_acc.png'.format(dataset))
+
+
+def plot_bar(dataset):
+    log_path = lambda x: 'log/{}/Robust_to_noise_test.pkl'.format(x)
+
+    with open(log_path('MNIST_test'), 'rb') as f:
+        adv_noise = pkl.load(f)
+    with open(log_path('MNIST_normal_noiseX'), 'rb') as f:
+        no_noise = pkl.load(f)
+
+    var = np.array([0.2, 0.4, 0.6, 0.8, 1.0])
+
+    adv_noise_KL = np.array([x.data.cpu().numpy() for x in adv_noise['val_KL'][1:]])
+    no_noise_KL = np.array([x.data.cpu().numpy() for x in no_noise['val_KL'][1:]])
+
+    fig, ax = plt.subplots(1,1)
+    width = 0.09
+
+    bar = ax.bar(var - width/2, adv_noise_KL, width, label='Adversarial Noise', color='salmon')
+    #present_height(ax, bar)
+    bar = ax.bar(var + width/2, no_noise_KL, width, label='Baseline', color='royalblue')
+    #present_height(ax, bar)
+
+    ax.set_xticks(var)
+    ax.set_xticklabels([str(x) for x in var])
+
+    dataset_title = dataset
+    ax.set_xlabel('Variance of input noise')
+
+    ax.yaxis.set_tick_params()
+    ax.set_ylabel('KL-divergence')
+    ax.legend(loc='upper left', shadow=True, ncol=1)
+
+    ax.set_axisbelow(True)
+    ax.yaxis.grid(True, color='gray', linestyle='dashed', linewidth=0.5)
+
+    plt.tight_layout()
+    plt.savefig('{}_KL.png'.format(dataset), format='png', dpi=300)
+    plt.show()
+
+def present_height(ax, bar):
+    for rect in bar:
+        height = rect.get_height()
+        posx = rect.get_x()+rect.get_width()*0.5
+        posy = height*1.01
+        ax.text(posx, posy, '%.3f' % height, rotation=90, ha='center', va='bottom')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--domain',type=str)
     parser.add_argument('--ylim',type=int,default=None)
     args = parser.parse_args()
-    plot_figure(args.domain,args.ylim)
+    plot_acc(args.domain,args.ylim)
+    plot_bar(args.domain)

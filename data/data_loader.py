@@ -57,5 +57,5 @@ class DataWrapper(object):
         train_loader = DataLoader(train_dataset, batch_size=self.batch_size,
                                   num_workers=self.num_workers, drop_last=True, shuffle=True)
         valid_loader = DataLoader(test_dataset, batch_size=self.batch_size,
-                                  num_workers=self.num_workers, drop_last=False)
+                                  num_workers=self.num_workers, drop_last=False, shuffle=False)
         return train_loader, valid_loader

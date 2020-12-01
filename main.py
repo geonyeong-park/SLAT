@@ -31,6 +31,8 @@ def get_arguments():
                         required=False, help="")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
+    parser.add_argument("--ld", type=float, default=None,
+                        required=False, help="Lagrangian Multiplier for L2 penalty")
 
     return parser.parse_args()
 
@@ -60,7 +62,6 @@ def main(config, args):
         with open(os.path.join(log_dir, 'exp_detail.txt'), 'w') as f:
             f.write(args.exp_detail+'\n')
             f.close()
-    copyfile(args.yaml, os.path.join(log_dir, 'config.yaml'))
 
     # -------------------------------
     # Setting GPU
@@ -86,11 +87,17 @@ def main(config, args):
     if args.resume is not None:
         checkpoint = torch.load(args.resume)
         print('load {}'.format(args.resume))
+    if args.ld is not None:
+        print('Lambda: ', args.ld)
+        config['train']['ld'] = args.ld
 
+    with open(os.path.join(log_dir, 'config.yaml'), 'w') as f:
+        yaml.dump(config, f)
     # -------------------------------
 
     dataset = DataWrapper(config['model']['structure'], **config['dataset'][config['dataset']['name']])
     solver = GenByNoise(dataset, config)
+
 
     if args.resume is None:
         solver.train()
