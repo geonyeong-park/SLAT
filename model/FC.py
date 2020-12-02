@@ -18,36 +18,43 @@ class NoisyFC(nn.Module):
         self.num_cls = config['dataset'][self.data_name]['num_cls']
         self.input_size = config['dataset'][self.data_name]['input_size']
         self.channel = config['dataset'][self.data_name]['channel']
+        self.use_adversarial_noise = True
 
         self.module_output = self.config['model']['FC']['module']
         self.module_input = [self.input_size**2*self.channel] + self.module_output[:-1]
         self.noise_L = self.config['model']['FC']['noise_L']
+        norm = self.config['model']['FC']['norm']
+        clamp =self.config['model']['FC']['clamp']
 
         self.noisy_module = nn.ModuleList([
-            NoisyModule(self.noise_L, i, j)
+            NoisyModule(self.noise_L, i, j, norm, clamp)
          for i,j in zip(self.module_input, self.module_output)])
 
         self.logit = nn.Linear(self.module_output[-1], self.num_cls)
 
     def forward(self, x):
         h = x
-        norm_penalty = torch.tensor(0.).to('cuda')
+        self.norm_penalty = torch.tensor(0.).to('cuda')
         for i in range(len(self.noisy_module)):
-            h = self.noisy_module[i](h)
-            norm_penalty += self.noisy_module[i].norm_penalty
+            h = self.noisy_module[i](h, i)
+            self.norm_penalty += self.noisy_module[i].norm_penalty
 
         logit = self.logit(h)
-        return logit, norm_penalty
+        return logit
 
 class NoisyModule(nn.Module):
-    def __init__(self, noise_L, in_unit, out_unit):
+    def __init__(self, noise_L, in_unit, out_unit, norm, clamp):
         super(NoisyModule, self).__init__()
         self.noise_L = noise_L
         self.in_unit = in_unit
         self.out_unit = out_unit
+        self.norm = norm
+        self.clamp = clamp
 
         self.linear_layer = nn.Linear(in_unit, out_unit)
         self.noise_layer = nn.Linear(in_unit, in_unit, bias=not noise_L)
+        #bound = 1 / (5.*math.sqrt(self.noise_layer.weight.size(1)))
+        #nn.init.uniform_(self.noise_layer.weight, -bound, bound)
         self.ReLU = nn.ReLU()
 
         if self.noise_L:
@@ -66,12 +73,14 @@ class NoisyModule(nn.Module):
             return grad * mask
         return hook
 
-    def forward(self, x):
+    def forward(self, x, index):
         self.norm_penalty = torch.tensor(0.).to('cuda')
         if self.training:
-            x_noise = self.noise_layer(torch.randn_like(x))
+            x_noise = self.noise_layer(sqrt(0.1)*torch.randn_like(x))
+            if self.clamp and index == 0:
+                x_noise = torch.clamp(x_noise, -0.3, 0.3) # Allowed error level
             x_hat = x+x_noise
-            self.norm_penalty += torch.norm(x_noise).to('cuda')
+            self.norm_penalty += torch.mean(torch.norm(x_noise, float(self.norm), dim=1)).to('cuda')
 
             h = self.linear_layer(x_hat)
             h = self.ReLU(h)
@@ -85,13 +94,14 @@ class NormalFC(NoisyFC):
     def __init__(self, config):
         super(NormalFC, self).__init__(config)
         self.normal_module = nn.Sequential(*[
-            NormalModule(i, j, config['model']['add_noise'])
+            NormalModule(i, j, config['model']['GNI_in_normal'])
         for i,j in zip(self.module_input, self.module_output)])
+        self.use_adversarial_noise = False
 
     def forward(self, x):
         h = self.normal_module(x)
         logit = self.logit(h)
-        return logit, None
+        return logit
 
 class NormalModule(nn.Module):
     def __init__(self, in_unit, out_unit, add_noise=False):
@@ -109,4 +119,13 @@ class NormalModule(nn.Module):
         h = self.linear_layer(x)
         h = self.ReLU(h)
         return h
+
+class Wrapper(nn.Module):
+    def __init__(self, model):
+        super(Wrapper, self).__init__()
+        self.model = model
+
+    def forward(self, x):
+        out, _ = self.model(x)
+        return out
 

@@ -7,7 +7,12 @@ import os
 import shutil
 import sys
 import pickle as pkl
-from model.FC import NoisyFC, NormalFC
+from timeit import default_timer as timer
+
+import advertorch
+from advertorch.attacks import LinfPGDAttack
+from advertorch.context import ctx_noparamgrad_and_eval
+from model.FC import NoisyFC, NormalFC, Wrapper
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from Visualize import plot_embedding
@@ -25,7 +30,7 @@ class GenByNoise(object):
         self.data_name = config['dataset']['name']
         self.num_cls = config['dataset'][self.data_name]['num_cls']
 
-        structure = config['model']['structure']
+        structure = config['model'][self.data_name]
         assert structure == 'FC' or structure =='NormalFC'
         if structure == 'FC':
             self.model = NoisyFC(config).to(self.device)
@@ -35,8 +40,9 @@ class GenByNoise(object):
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
-        self._get_optimizer()
-        self.using_noise = config['model']['add_noise'] and structure != 'NormalFC'
+        self.using_noise = self._get_optimizer()
+        print('Using adversarial noise distribution: ', self.using_noise)
+        self.using_advertorch = config['model']['adv_train']
 
         self.log_loss = {}
         self.log_loss['train_theta_loss'] = []
@@ -44,10 +50,17 @@ class GenByNoise(object):
         self.log_loss['val_acc'] = []
         self.log_loss['val_loss'] = []
         self.log_loss['val_KL'] = []
+        self.log_loss['training_time'] = 0.
         self.ld = config['train']['ld']
         self.val_epoch = 1
 
         self.tsne = TSNE(n_components=2, perplexity=20, init='pca', n_iter=3000)
+
+        # In case for testing adversarial vulnerability or do training
+        self.adversary = LinfPGDAttack(
+            self.model, loss_fn=nn.CrossEntropyLoss(), eps=0.3,
+            nb_iter=7, eps_iter=0.01, rand_init=True, clip_min=-2.0, clip_max=2.0,
+            targeted=False)
 
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -68,19 +81,26 @@ class GenByNoise(object):
         self.theta_scheduler = torch.optim.lr_scheduler.ExponentialLR(self.opt_theta, gamma=opt_param['lr_decay'])
         self.noise_scheduler = torch.optim.lr_scheduler.ExponentialLR(self.opt_noise, gamma=opt_param['lr_decay'])
 
+        use_adversarial_noise = self.model.use_adversarial_noise
+        return use_adversarial_noise
+
     def train(self):
         epochs = self.config['train']['num_epochs']
         sample_path = os.path.join(self.log_dir, '{}epoch_log.pkl')
         n_iter = 0
+        training_time = 0
 
         for e in range(epochs):
+            start = timer()
             self.model.train()
 
             n_iter = self._train_epoch(e, n_iter)
+            end = timer()
+            training_time += end - start
 
             if (e+1) % self.val_epoch == 0:
                 self.model.eval()
-                self._validation(e, n_iter)
+                self._validation(e, n_iter, advattack=False)
 
             if e >= 10:
                 self.theta_scheduler.step()
@@ -97,14 +117,22 @@ class GenByNoise(object):
                 }, os.path.join(self.snapshot_dir, 'pretrain_'+str(e+1)+'.pth'))
 
                 with open(sample_path.format(e+1), 'wb') as f:
+                    self.log_loss['training_time'] = training_time
                     pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
 
-        print('Training Finished')
+        print('Training Finished, elapsed time: {}'.format(training_time))
 
     def _train_epoch(self, epoch, n_iter):
         for x, y in self.train_loader:
             x = x.to(self.device)
             y = y.long().to(self.device)
+
+            if self.using_advertorch:
+                self.model.eval()
+                with torch.no_grad():
+                    with torch.enable_grad():
+                        x = self.adversary.perturb(x, y)
+                self.model.train()
 
             # -------------------------
             # Update theta
@@ -129,19 +157,25 @@ class GenByNoise(object):
                     self.log_loss['train_noise_loss'].append(noise_loss.data.cpu().numpy())
 
             n_iter += 1
+
+        adv_noise_input = self.model.noisy_module[0].noise_layer(x)
+        inf_norm = torch.mean(torch.norm(adv_noise_input, float('inf'), dim=1))
+        fro_norm = torch.mean(torch.norm(adv_noise_input, float(2), dim=1))
+        print('[{}] epoch || inf norm: {}, l2 norm: {}'.format(epoch, inf_norm, fro_norm))
         return n_iter
 
     def _step(self, model, x, y, update='theta'):
-        logit, norm_penalty = model(x)
+        model.train()
+        logit = model(x)
 
         if update == 'theta':
             loss = self.cen(logit, y)
         elif update == 'noise':
-            loss = -self.cen(logit, y) + self.ld * norm_penalty
+            loss = -self.cen(logit, y) + self.ld * model.norm_penalty
 
         return loss
 
-    def _validation(self, epoch, n_iter, record=True):
+    def _validation(self, epoch, n_iter, record=True, advattack=False):
         with torch.no_grad():
             self.model.eval()
 
@@ -153,10 +187,15 @@ class GenByNoise(object):
                 x = x.to(self.device)
                 y = y.long().to(self.device)
 
+                if advattack:
+                    with torch.no_grad():
+                        with torch.enable_grad():
+                            x = self.adversary.perturb(x, y)
+
                 loss = self._step(self.model, x, y, 'theta')
                 valid_loss += loss.data.cpu().numpy()
 
-                output, _ = self.model(x)
+                output = self.model(x)
                 pred = output.data.max(1)[1]
                 valid_acc += pred.eq(y.data).cpu().sum()
 
@@ -201,13 +240,7 @@ class GenByNoise(object):
             self.log_loss['val_KL'].append(KL_diff)
             print('KL difference between clean and noisy data: {}'.format(KL_diff))
 
-
-    def test(self, checkpoint):
-        self.model.load_state_dict(checkpoint['model'])
-        self.model.eval()
-        self._PCA_tSNE()
-        self.model.to(self.device)
-
+    def _test_gaussian(self):
         var_noise_in_data = [0., 0.2, 0.4, 0.6, 0.8, 1.0]
         for var in var_noise_in_data:
             _, self.valid_loader = self.dataset.get_data_loaders(var)
@@ -218,12 +251,27 @@ class GenByNoise(object):
         with open(os.path.join(self.log_dir, 'Robust_to_noise_test.pkl'), 'wb') as f:
             pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
 
+    def _test_adv_vulnerability(self):
+        self._validation(None, None, False, advattack=True)
+
+    def test(self, checkpoint, mode):
+        self.model.load_state_dict(checkpoint['model'])
+        self.model.eval()
+        self._PCA_tSNE()
+        self.model.to(self.device)
+
+        assert mode == 'gaussian' or mode == 'adv_attack'
+        if mode == 'gaussian':
+            self._test_gaussian()
+        elif mode == 'adv_attack':
+            self._test_adv_vulnerability()
+
         print('Test finished')
 
     def _PCA_tSNE(self):
         image, label = next(iter(self.valid_loader))
         sample_path = lambda x: os.path.join(self.log_dir, '{}.jpg'.format(x))
-        logit, _ = self.model.cpu()(image.cpu())
+        logit = self.model.cpu()(image.cpu())
         tsne = self.tsne.fit_transform(logit.data.cpu().numpy())
         plot_embedding(tsne, label.data.cpu().numpy(), sample_path('tSNE'))
 
@@ -231,6 +279,5 @@ class GenByNoise(object):
         pc = pca.fit_transform(logit.data.cpu().numpy())
         plot_embedding(pc, label.data.cpu().numpy(), sample_path('PCA'))
         print('Plot tSNE and PCA results')
-
 
 

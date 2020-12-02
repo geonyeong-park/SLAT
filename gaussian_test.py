@@ -112,7 +112,7 @@ def validation(x_test, y_test, encoder):
     return acc
 
 def eval(n_hidden_list):
-    ckpt = lambda x,y: os.path.join('snapshots', 'gaussian_test', '{}_{}.pth'.format(x, y))
+    ckpt = lambda x,y: os.path.join('snapshots', 'gaussian_test', '{}_{}_{}.pth'.format(x, y, use_adv))
 
     fig_bdry, ax_bdry = plt.subplots(1, len(n_hidden_list), figsize=(10*len(n_hidden_list), 10))
     fig_eigen, ax_eigen = plt.subplots(1,2)
@@ -136,7 +136,7 @@ def eval(n_hidden_list):
         noise_hidden_cov = np.matmul(hidden_L, hidden_L.T)
 
         _, eigen_ld, eigen_v = np.linalg.svd(noise_hidden_cov)
-        ev_per_dim.append(eigen_ld[ :2])
+        ev_per_dim.append(eigen_ld[ :4])
 
         _, h = encoder(X)
         mu1, mu2 = torch.mean(h[ :n_samples//2], dim=0), torch.mean(h[n_samples//2: ], dim=0)
@@ -144,7 +144,7 @@ def eval(n_hidden_list):
         dmu = dmu.data.cpu().numpy()
 
         cos_sim = []
-        for v in eigen_v[ :2]:
+        for v in eigen_v[ :4]:
             cos = np.abs(np.dot(dmu, v)) / np.linalg.norm(dmu)
             cos_sim.append(cos)
         cos_per_dim.append(cos_sim)

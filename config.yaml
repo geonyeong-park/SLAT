@@ -25,15 +25,19 @@ dataset:
     num_workers: 1
 
 model:
-  structure: 'FC' # FC, NormalFC
-  add_noise: True # For NormalFC
+  MNIST: 'FC' # FC for adversarial noise injection, NormalFC for gaussian noise injection
+  SVHN: 'CNN'
+  adv_train: False
+  GNI_in_normal: True
   FC:
     module: [512, 256, 128]
     noise_L: True
+    norm: 'inf' # 'inf' for infnorm penalty. Integer otherwise.
+    clamp: False # Clamp input noise for fair training
 
 train:
-  num_epochs: 200
-  ld: 0.001
+  num_epochs: 100
+  ld: 0.02
 optimizer:
   momentum: 0.9
   lr: 0.001

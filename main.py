@@ -27,12 +27,18 @@ def get_arguments():
                         help="")
     parser.add_argument("--model_structure", type=str, default=None, required=False,
                         help="")
-    parser.add_argument("--no_adversarial_noise", default=False, action='store_true',
-                        required=False, help="")
+    parser.add_argument("--adv_attack", default=False, action='store_true', required=False,
+                        help="")
+    parser.add_argument("--GNI_in_normal", default=False, action='store_true', required=False,
+                        help="")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
+    parser.add_argument("--resume_mode", type=str, default='adv_attack',
+                        required=False, help="normal, gaussian, adv_attack")
     parser.add_argument("--ld", type=float, default=None,
                         required=False, help="Lagrangian Multiplier for L2 penalty")
+    parser.add_argument("--num_epochs", type=int, default=None,
+                        required=False, help="")
 
     return parser.parse_args()
 
@@ -80,29 +86,39 @@ def main(config, args):
         config['dataset']['name'] = args.dataset_name
     if args.model_structure is not None:
         print('model: ', args.model_structure)
-        config['model']['structure'] = args.model_structure
-    if args.no_adversarial_noise:
-        print('Not using noise')
-        config['model']['add_noise'] = not args.no_adversarial_noise
+        dataset_name = config['dataset']['name']
+        config['model'][dataset_name] = args.model_structure
+    if args.GNI_in_normal:
+        print('GNI in normal mode')
+        config['model']['GNI_in_normal'] = args.GNI_in_normal
+    if args.adv_attack:
+        print('adversarial attack (PGD): ', args.adv_attack)
+        config['model']['adv_train'] = args.adv_attack
+        assert 'Normal' in config['model'][dataset_name]
     if args.resume is not None:
         checkpoint = torch.load(args.resume)
+        mode = args.resume_mode
         print('load {}'.format(args.resume))
     if args.ld is not None:
         print('Lambda: ', args.ld)
         config['train']['ld'] = args.ld
+    if args.num_epochs is not None:
+        print('epochs: ', args.num_epochs)
+        config['train']['num_epochs'] = args.num_epochs
+
 
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as f:
         yaml.dump(config, f)
     # -------------------------------
 
-    dataset = DataWrapper(config['model']['structure'], **config['dataset'][config['dataset']['name']])
+    dataset = DataWrapper(config['model'][config['dataset']['name']], **config['dataset'][config['dataset']['name']])
     solver = GenByNoise(dataset, config)
 
 
     if args.resume is None:
         solver.train()
     else:
-        solver.test(checkpoint)
+        solver.test(checkpoint, mode)
 
 
 
