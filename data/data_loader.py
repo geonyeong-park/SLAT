@@ -38,7 +38,7 @@ class DataWrapper(object):
         test_transforms_list = [transforms.Resize(self.input_size),
                                 transforms.ToTensor(),
                                 transforms.Normalize([0.5], [0.5])]
-        if noisy_test:
+        if noisy_test: # For Gaussian Noise evalmode. Should be modified.
             train_transforms_list.append(transforms.Lambda(lambda x: sqrt(noisy_test)*torch.randn_like(x) + x))
             test_transforms_list.append(transforms.Lambda(lambda x: sqrt(noisy_test)*torch.randn_like(x) + x))
 

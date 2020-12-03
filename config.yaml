@@ -23,17 +23,31 @@ dataset:
     channel: 3
     num_cls: 10
     num_workers: 1
+  CIFAR10:
+    name: 'CIFAR10'
+    batch_size: 128
+    input_size: 32
+    channel: 3
+    num_cls: 10
+    num_workers: 1
+
 
 model:
+  baseline: ['base', 'GNI', 'AdvGNI', 'Dropout', 'Mixup', 'Cutmix', 'Cutout']
+  evalmode: ['gaussian', 'color', 'HFC', 'LFC', 'adv_attack']
   MNIST: 'FC' # FC for adversarial noise injection, NormalFC for gaussian noise injection
-  SVHN: 'CNN'
-  adv_train: False
-  GNI_in_normal: True
+  SVHN: 'AllCNN'
+  CIFAR10: 'AllCNN'
+
   FC:
     module: [512, 256, 128]
-    noise_L: True
+    noise_linear: True
+    noise_num_layer: 1
     norm: 'inf' # 'inf' for infnorm penalty. Integer otherwise.
-    clamp: False # Clamp input noise for fair training
+  AllCNN:
+    noise_linear: False
+    noise_num_layer: 1
+    norm: '2'
 
 train:
   num_epochs: 100

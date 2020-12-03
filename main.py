@@ -25,12 +25,10 @@ def get_arguments():
                         help="")
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
-    parser.add_argument("--model_structure", type=str, default=None, required=False,
-                        help="")
-    parser.add_argument("--adv_attack", default=False, action='store_true', required=False,
-                        help="")
-    parser.add_argument("--GNI_in_normal", default=False, action='store_true', required=False,
-                        help="")
+    parser.add_argument("--model_structure", type=str, default=None, required=True,
+                        help="'base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutmix', 'cutout'")
+    parser.add_argument("--data_perturb", type=str, default=None, required=True,
+                        help="base, mixup, cutmix, cutout")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
     parser.add_argument("--resume_mode", type=str, default='adv_attack',
@@ -85,16 +83,10 @@ def main(config, args):
         print('dataset: ', args.dataset_name)
         config['dataset']['name'] = args.dataset_name
     if args.model_structure is not None:
-        print('model: ', args.model_structure)
-        dataset_name = config['dataset']['name']
-        config['model'][dataset_name] = args.model_structure
-    if args.GNI_in_normal:
-        print('GNI in normal mode')
-        config['model']['GNI_in_normal'] = args.GNI_in_normal
-    if args.adv_attack:
-        print('adversarial attack (PGD): ', args.adv_attack)
-        config['model']['adv_train'] = args.adv_attack
-        assert 'Normal' in config['model'][dataset_name]
+        structure = args.model_structure
+        assert structure in config['model']['baseline']
+        print('model: ', structure)
+        config['model']['baseline'] = structure
     if args.resume is not None:
         checkpoint = torch.load(args.resume)
         mode = args.resume_mode

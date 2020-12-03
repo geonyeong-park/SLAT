@@ -12,7 +12,8 @@ from timeit import default_timer as timer
 import advertorch
 from advertorch.attacks import LinfPGDAttack
 from advertorch.context import ctx_noparamgrad_and_eval
-from model.FC import NoisyFC, NormalFC, Wrapper
+from model.FC import NoisyFC
+from model.AllCNN import NoisyAllConv
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from Visualize import plot_embedding
@@ -31,18 +32,19 @@ class GenByNoise(object):
         self.num_cls = config['dataset'][self.data_name]['num_cls']
 
         structure = config['model'][self.data_name]
-        assert structure == 'FC' or structure =='NormalFC'
+        assert structure == 'FC' or structure =='AllCNN' or structure == 'ResNet'
         if structure == 'FC':
             self.model = NoisyFC(config).to(self.device)
-        elif structure == 'NormalFC':
-            self.model = NormalFC(config).to(self.device)
+        elif structure == 'AllCNN':
+            self.model = NoisyAllConv(config).to(self.device)
+        elif structure == 'ResNet':
+            raise ValueError('Not implemented yet')
 
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
-        self.using_noise = self._get_optimizer()
-        print('Using adversarial noise distribution: ', self.using_noise)
-        self.using_advertorch = config['model']['adv_train']
+        self.using_adv_noise = self._get_optimizer()
+        print('Using adversarial noise distribution: ', self.using_adv_noise)
 
         self.log_loss = {}
         self.log_loss['train_theta_loss'] = []
@@ -127,13 +129,6 @@ class GenByNoise(object):
             x = x.to(self.device)
             y = y.long().to(self.device)
 
-            if self.using_advertorch:
-                self.model.eval()
-                with torch.no_grad():
-                    with torch.enable_grad():
-                        x = self.adversary.perturb(x, y)
-                self.model.train()
-
             # -------------------------
             # Update theta
             self.opt_theta.zero_grad()
@@ -142,7 +137,7 @@ class GenByNoise(object):
             self.opt_theta.step()
             # -------------------------
             # Update noise
-            if self.using_noise:
+            if self.using_adv_noise:
                 self.opt_noise.zero_grad()
                 noise_loss = self._step(self.model, x, y, 'noise')
                 noise_loss.backward()
@@ -152,7 +147,7 @@ class GenByNoise(object):
             if n_iter % self.config['exp_setting']['log_every_n_steps'] == 0:
                 self.writer.add_scalar('train_loss/theta', theta_loss, global_step=n_iter)
                 self.log_loss['train_theta_loss'].append(theta_loss.data.cpu().numpy())
-                if self.using_noise:
+                if self.using_adv_noise:
                     self.writer.add_scalar('train_loss/noise', noise_loss, global_step=n_iter)
                     self.log_loss['train_noise_loss'].append(noise_loss.data.cpu().numpy())
 
@@ -260,7 +255,7 @@ class GenByNoise(object):
         self._PCA_tSNE()
         self.model.to(self.device)
 
-        assert mode == 'gaussian' or mode == 'adv_attack'
+        assert mode in self.config['model']['evalmode']
         if mode == 'gaussian':
             self._test_gaussian()
         elif mode == 'adv_attack':
