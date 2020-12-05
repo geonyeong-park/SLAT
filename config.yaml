@@ -33,7 +33,7 @@ dataset:
 
 
 model:
-  baseline: ['base', 'GNI', 'AdvGNI', 'Dropout', 'Mixup', 'Cutmix', 'Cutout']
+  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutmix', 'cutout']
   evalmode: ['gaussian', 'color', 'HFC', 'LFC', 'adv_attack']
   MNIST: 'FC' # FC for adversarial noise injection, NormalFC for gaussian noise injection
   SVHN: 'AllCNN'
@@ -48,12 +48,20 @@ model:
     noise_linear: False
     noise_num_layer: 1
     norm: '2'
+  cutout:
+    length: 16
+  mixup:
+    alpha: 1.
 
 train:
-  num_epochs: 100
-  ld: 0.02
+  num_epochs: 300
+  ld:
+    MNIST: 0.01
+    CIFAR10: 1.
 optimizer:
   momentum: 0.9
-  lr: 0.001
+  lr:
+    MNIST: 0.001
+    CIFAR10: 0.05
   weight_decay: 0.0005
   lr_decay: 0.99

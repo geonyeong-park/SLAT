@@ -27,7 +27,7 @@ def get_arguments():
                         help="")
     parser.add_argument("--model_structure", type=str, default=None, required=True,
                         help="'base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutmix', 'cutout'")
-    parser.add_argument("--data_perturb", type=str, default=None, required=True,
+    parser.add_argument("--data_perturb", type=str, default=None, required=False,
                         help="base, mixup, cutmix, cutout")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
@@ -93,7 +93,7 @@ def main(config, args):
         print('load {}'.format(args.resume))
     if args.ld is not None:
         print('Lambda: ', args.ld)
-        config['train']['ld'] = args.ld
+        config['train']['ld'][config['dataset']['name']] = args.ld
     if args.num_epochs is not None:
         print('epochs: ', args.num_epochs)
         config['train']['num_epochs'] = args.num_epochs
@@ -103,7 +103,7 @@ def main(config, args):
         yaml.dump(config, f)
     # -------------------------------
 
-    dataset = DataWrapper(config['model'][config['dataset']['name']], **config['dataset'][config['dataset']['name']])
+    dataset = DataWrapper(config)
     solver = GenByNoise(dataset, config)
 
 

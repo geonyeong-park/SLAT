@@ -15,7 +15,7 @@ class NoisyAllConv(nn.Module):
         self.input_size = config['dataset'][self.data_name]['input_size']
         self.channel = config['dataset'][self.data_name]['channel']
         self.architecture = config['model']['baseline']
-        self.use_adversarial_noise = True if 'Adv' in self.architecture else False
+        self.use_adversarial_noise = True if 'advGNI' in self.architecture else False
         noise_linear = self.config['model']['FC']['noise_linear']
         noise_num_layer = self.config['model']['FC']['noise_num_layer']
         norm = self.config['model']['FC']['norm']
@@ -48,27 +48,30 @@ class NoisyAllConv(nn.Module):
 
         self.class_conv = nn.Conv2d(192, self.num_cls, 1)
 
-        self.noisy_module = nn.ModuleList(*[
-            NoisyCNNModule(self.architecture, noise_linear, noise_num_layer, 3, norm,
-                           image=True, channel=self.channel),
+        self.noisy_module = nn.ModuleList([
+            NoisyCNNModule(self.architecture, noise_linear, noise_num_layer, 3, norm, True, self.channel),
             NoisyCNNModule(self.architecture, noise_linear, noise_num_layer, 96, norm),
             NoisyCNNModule(self.architecture, noise_linear, noise_num_layer, 192, norm),
         ])
 
-
     def forward(self, x):
+        self.norm_penalty = torch.tensor(0.).to('cuda')
         x_hat = self.noisy_module[0](x)
+        self.norm_penalty += self.noisy_module[0].norm_penalty
+
         h = self.m1(x_hat)
         h_ = self.noisy_module[1](h)
+        self.norm_penalty += self.noisy_module[1].norm_penalty
 
         h = self.m2(h_)
         h_ = self.noisy_module[2](h)
+        self.norm_penalty += self.noisy_module[2].norm_penalty
 
         h = self.m3(h_)
         h = self.class_conv(h)
 
         pool_out = F.adaptive_avg_pool2d(h, 1)
-        pool_out.view(-1, self.num_cls)
+        pool_out = pool_out.view(-1, self.num_cls)
         return pool_out
 
 class NoisyCNNModule(NoisyModule):
@@ -92,11 +95,11 @@ class NoisyCNNModule(NoisyModule):
         self.norm_penalty = torch.tensor(0.).to('cuda')
         if self.training:
             if self.architecture == 'GNI':
-                x_hat = x + torch.randn_like(x) * sqrt(0.1)
+                x_hat = x + torch.randn_like(x) * sqrt(0.05)
                 return x_hat
             elif self.architecture == 'advGNI':
                 noise_shape = x.shape if self.image else x.shape[ :2]
-                noise = self.noise_layer(sqrt(0.1)*torch.randn(noise_shape))
+                noise = self.noise_layer(sqrt(0.01)*torch.randn(noise_shape).to('cuda'))
                 if not self.image: noise = noise.view(-1,self.in_unit,1,1).repeat(1,1,x.shape[-2],x.shape[-1])
                 x_hat = x + noise
                 self.norm_penalty += torch.mean(torch.norm(noise, float(self.norm), dim=1)).to('cuda')

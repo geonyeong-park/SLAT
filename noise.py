@@ -8,6 +8,8 @@ import shutil
 import sys
 import pickle as pkl
 from timeit import default_timer as timer
+from math import sqrt
+import numpy as np
 
 import advertorch
 from advertorch.attacks import LinfPGDAttack
@@ -30,6 +32,7 @@ class GenByNoise(object):
         self.dataset = dataset
         self.data_name = config['dataset']['name']
         self.num_cls = config['dataset'][self.data_name]['num_cls']
+        self.structure = config['model']['baseline']
 
         structure = config['model'][self.data_name]
         assert structure == 'FC' or structure =='AllCNN' or structure == 'ResNet'
@@ -53,7 +56,7 @@ class GenByNoise(object):
         self.log_loss['val_loss'] = []
         self.log_loss['val_KL'] = []
         self.log_loss['training_time'] = 0.
-        self.ld = config['train']['ld']
+        self.ld = config['train']['ld'][self.data_name]
         self.val_epoch = 1
 
         self.tsne = TSNE(n_components=2, perplexity=20, init='pca', n_iter=3000)
@@ -76,9 +79,9 @@ class GenByNoise(object):
         noise_param = [whole_param[key] for key in whole_param.keys() if 'noise' in key]
         theta_param = [whole_param[key] for key in whole_param.keys() if not 'noise' in key]
 
-        self.opt_theta = torch.optim.SGD(theta_param, opt_param['lr'],
+        self.opt_theta = torch.optim.SGD(theta_param, opt_param['lr'][self.data_name],
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
-        self.opt_noise = torch.optim.SGD(noise_param, opt_param['lr'],
+        self.opt_noise = torch.optim.SGD(noise_param, opt_param['lr'][self.data_name]/5,
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
         self.theta_scheduler = torch.optim.lr_scheduler.ExponentialLR(self.opt_theta, gamma=opt_param['lr_decay'])
         self.noise_scheduler = torch.optim.lr_scheduler.ExponentialLR(self.opt_noise, gamma=opt_param['lr_decay'])
@@ -128,6 +131,7 @@ class GenByNoise(object):
         for x, y in self.train_loader:
             x = x.to(self.device)
             y = y.long().to(self.device)
+            x,y = self._preprocess(x,y)
 
             # -------------------------
             # Update theta
@@ -153,10 +157,11 @@ class GenByNoise(object):
 
             n_iter += 1
 
-        adv_noise_input = self.model.noisy_module[0].noise_layer(x)
-        inf_norm = torch.mean(torch.norm(adv_noise_input, float('inf'), dim=1))
-        fro_norm = torch.mean(torch.norm(adv_noise_input, float(2), dim=1))
-        print('[{}] epoch || inf norm: {}, l2 norm: {}'.format(epoch, inf_norm, fro_norm))
+        if self.using_adv_noise:
+            adv_noise_input = self.model.noisy_module[0].noise_layer(sqrt(0.01)*torch.randn_like(x))
+            inf_norm = torch.mean(torch.norm(adv_noise_input, float('inf'), dim=1))
+            fro_norm = torch.mean(torch.norm(adv_noise_input, float(2), dim=1))
+            print('[{}] epoch || inf norm: {}, l2 norm: {}'.format(epoch, inf_norm, fro_norm))
         return n_iter
 
     def _step(self, model, x, y, update='theta'):
@@ -164,11 +169,28 @@ class GenByNoise(object):
         logit = model(x)
 
         if update == 'theta':
-            loss = self.cen(logit, y)
+            loss = self._mix_loss(logit,y) if self.structure=='mixup' else self.cen(logit, y)
         elif update == 'noise':
             loss = -self.cen(logit, y) + self.ld * model.norm_penalty
-
         return loss
+
+    def _mix_loss(self, logit, y):
+        y_a, y_b, lam = y[0], y[1], y[2]
+        return lam * self.cen(logit, y_a) + (1 - lam) * self.cen(logit, y_b)
+
+    def _preprocess(self, x, y):
+        if self.structure == 'mixup':
+            alpha = self.config['model']['mixup']['alpha']
+            lam = np.random.beta(alpha, alpha)
+
+            batch_size = x.size()[0]
+            index = torch.randperm(batch_size).cuda()
+
+            mixed_x = lam * x + (1 - lam) * x[index, :]
+            y_a, y_b = y, y[index]
+            return mixed_x, (y_a, y_b, lam)
+        else:
+            return x, y
 
     def _validation(self, epoch, n_iter, record=True, advattack=False):
         with torch.no_grad():
@@ -187,7 +209,8 @@ class GenByNoise(object):
                         with torch.enable_grad():
                             x = self.adversary.perturb(x, y)
 
-                loss = self._step(self.model, x, y, 'theta')
+                logit = self.model(x)
+                loss = self.cen(logit, y)
                 valid_loss += loss.data.cpu().numpy()
 
                 output = self.model(x)
@@ -222,8 +245,8 @@ class GenByNoise(object):
                 x_noise = x_noise.to(self.device)
                 x_clean = x_clean.to(self.device)
 
-                logit_noise, _ = self.model(x_noise)
-                logit_clean, _ = self.model(x_clean)
+                logit_noise = self.model(x_noise)
+                logit_clean = self.model(x_clean)
 
                 yhat_noise = nn.Softmax(dim=1)(logit_noise)
                 yhat_clean = nn.Softmax(dim=1)(logit_clean)

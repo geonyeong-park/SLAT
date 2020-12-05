@@ -19,7 +19,7 @@ class NoisyFC(nn.Module):
         self.input_size = config['dataset'][self.data_name]['input_size']
         self.channel = config['dataset'][self.data_name]['channel']
         self.architecture = config['model']['baseline']
-        self.use_adversarial_noise = True if 'Adv' in self.architecture else False
+        self.use_adversarial_noise = True if 'advGNI' in self.architecture else False
 
         self.module_output = self.config['model']['FC']['module']
         self.module_input = [self.input_size**2*self.channel] + self.module_output[:-1]
@@ -111,36 +111,4 @@ class NoisyModule(nn.Module):
             h = self.w(x)
             h = self.ReLU(h)
             return h
-
-"""
-class NormalFC(NoisyFC):
-    def __init__(self, config):
-        super(NormalFC, self).__init__(config)
-        self.normal_module = nn.Sequential(*[
-            NormalModule(i, j, config['model']['GNI_in_normal'])
-        for i,j in zip(self.module_input, self.module_output)])
-        self.use_adversarial_noise = False
-
-    def forward(self, x):
-        h = self.normal_module(x)
-        logit = self.logit(h)
-        return logit
-
-class NormalModule(nn.Module):
-    def __init__(self, in_unit, out_unit, add_noise=False):
-        super(NormalModule, self).__init__()
-        self.in_unit = in_unit
-        self.out_unit = out_unit
-        self.add_noise = add_noise
-
-        self.linear_layer = nn.Linear(in_unit, out_unit)
-        self.ReLU = nn.ReLU()
-
-    def forward(self, x):
-        if self.add_noise and self.training:
-            x = x + torch.randn_like(x) * sqrt(0.1)
-        h = self.linear_layer(x)
-        h = self.ReLU(h)
-        return h
-"""
 
