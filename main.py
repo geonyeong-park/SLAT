@@ -25,6 +25,8 @@ def get_arguments():
                         help="")
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
+    parser.add_argument("--network", type=str, default=None, required=False,
+                        help="FC, AllCNN, ResNet")
     parser.add_argument("--model_structure", type=str, default=None, required=True,
                         help="'base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutmix', 'cutout'")
     parser.add_argument("--data_perturb", type=str, default=None, required=False,
@@ -32,9 +34,11 @@ def get_arguments():
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
     parser.add_argument("--resume_mode", type=str, default='adv_attack',
-                        required=False, help="normal, gaussian, adv_attack")
+                        required=False, help="uniform, gaussian, contrast, low_pass,high_pass, hue, saturate, adv_attack")
     parser.add_argument("--ld", type=float, default=None,
                         required=False, help="Lagrangian Multiplier for L2 penalty")
+    parser.add_argument("--mixup_alpha", type=float, default=None,
+                        required=False, help="")
     parser.add_argument("--num_epochs", type=int, default=None,
                         required=False, help="")
 
@@ -82,6 +86,9 @@ def main(config, args):
     if args.dataset_name is not None:
         print('dataset: ', args.dataset_name)
         config['dataset']['name'] = args.dataset_name
+    if args.network is not None:
+        print('network: ', args.network)
+        config['model'][config['dataset']['name']] = args.network
     if args.model_structure is not None:
         structure = args.model_structure
         assert structure in config['model']['baseline']
@@ -97,6 +104,10 @@ def main(config, args):
     if args.num_epochs is not None:
         print('epochs: ', args.num_epochs)
         config['train']['num_epochs'] = args.num_epochs
+    if args.mixup_alpha is not None:
+        assert structure == 'mixup'
+        print('mixup_alpha: ', args.mixup_alpha)
+        config['model']['mixup']['alpha'] = args.mixup_alpha
 
 
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as f:

@@ -1,0 +1,8 @@
+datafiles/
+log/
+snapshots/
+__pycache__/
+*.ipynb
+solver.py
+*.png
+*.sh

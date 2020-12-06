@@ -33,8 +33,8 @@ dataset:
 
 
 model:
-  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutmix', 'cutout']
-  evalmode: ['gaussian', 'color', 'HFC', 'LFC', 'adv_attack']
+  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'advdrop', 'cutout']
+  evalmode: ['uniform', 'gaussian', 'contrast', 'low_pass','high_pass', 'hue', 'saturate']
   MNIST: 'FC' # FC for adversarial noise injection, NormalFC for gaussian noise injection
   SVHN: 'AllCNN'
   CIFAR10: 'AllCNN'
@@ -43,9 +43,9 @@ model:
     module: [512, 256, 128]
     noise_linear: True
     noise_num_layer: 1
-    norm: 'inf' # 'inf' for infnorm penalty. Integer otherwise.
+    norm: '2' # 'inf' for infnorm penalty. Integer otherwise.
   AllCNN:
-    noise_linear: False
+    noise_linear: True
     noise_num_layer: 1
     norm: '2'
   cutout:
@@ -57,7 +57,7 @@ train:
   num_epochs: 300
   ld:
     MNIST: 0.01
-    CIFAR10: 1.
+    CIFAR10: 0.8
 optimizer:
   momentum: 0.9
   lr:

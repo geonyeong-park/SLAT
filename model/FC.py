@@ -55,26 +55,27 @@ class NoisyModule(nn.Module):
 
         self.w = nn.Linear(in_unit, out_unit)
         self.ReLU = nn.ReLU()
+        self.drop = nn.Dropout(0.5)
 
         if self.noise_linear:
             assert noise_num_layer == 1
-            self._linear_noise()
+            self.noise_layer = self._linear_noise(self.in_unit)
+            self.noise_layer.apply(self._tril_init)
+            self.mask = torch.tril(torch.ones((self.in_unit, self.in_unit))).to('cuda')
+            self.noise_layer.weight.register_hook(self._get_zero_grad_hook(self.mask))
         else:
-            self._nonlinear_noise()
+            self.noise_layer = self._nonlinear_noise(self.in_unit)
 
-    def _linear_noise(self):
-        self.noise_layer = nn.Linear(self.in_unit, self.in_unit, bias=not self.noise_linear)
-        self.noise_layer.apply(self._tril_init)
-        self.mask = torch.tril(torch.ones((self.in_unit, self.in_unit))).to('cuda')
-        self.noise_layer.weight.register_hook(self._get_zero_grad_hook(self.mask))
+    def _linear_noise(self, in_unit):
+        return nn.Linear(in_unit, in_unit, bias=False)
 
-    def _nonlinear_noise(self):
+    def _nonlinear_noise(self, in_unit):
         module = []
         for _ in range(self.noise_num_layer-2):
-            module.append(nn.Linear(self.in_unit, self.in_unit, bias=True))
+            module.append(nn.Linear(in_unit, in_unit, bias=False))
             module.append(self.ReLU)
-        module.append(nn.Linear(self.in_unit, self.in_unit, bias=True))
-        self.noise_layer = nn.Sequential(*module)
+        module.append(nn.Linear(in_unit, in_unit, bias=False))
+        return nn.Sequential(*module)
 
     def _tril_init(self, m):
         if isinstance(m, nn.Linear):
@@ -103,6 +104,11 @@ class NoisyModule(nn.Module):
                 h = self.w(x_hat)
                 h = self.ReLU(h)
                 return h
+            elif self.architecture == 'dropout':
+                h = self.w(x)
+                h = self.ReLU(h)
+                h = self.drop(h)
+                return h
             else:
                 h = self.w(x)
                 h = self.ReLU(h)
@@ -110,5 +116,6 @@ class NoisyModule(nn.Module):
         else:
             h = self.w(x)
             h = self.ReLU(h)
+            if self.architecture == 'dropout': return self.drop(h)
             return h
 

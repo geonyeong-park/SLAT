@@ -6,6 +6,7 @@ import torchvision.transforms as transforms
 from torchvision import datasets
 import importlib
 from PIL import Image
+from PIL import ImageFilter
 
 
 class DataWrapper(object):
@@ -18,8 +19,8 @@ class DataWrapper(object):
         self.input_size = config['dataset'][self.name]['input_size']
         self.num_workers = config['dataset'][self.name]['num_workers']
 
-    def get_data_loaders(self, noisy_test=False):
-        train_transforms, test_transforms = self._get_transform(noisy_test)
+    def get_data_loaders(self, test_noise_type=None, test_noise_param=None):
+        train_transforms, test_transforms = self._get_transform(test_noise_type, test_noise_param)
 
         train_split_token = True if self.name != 'SVHN' else 'train'
         test_split_token = False if self.name != 'SVHN' else 'test'
@@ -30,20 +31,20 @@ class DataWrapper(object):
         train_loader, valid_loader = self._get_train_test_loader(train_dataset, test_dataset)
         return train_loader, valid_loader
 
-    def _get_transform(self, noisy_test=False):
+    def _get_transform(self, test_noise_type, test_noise_param):
         train_transforms_list = [transforms.RandomResizedCrop(self.input_size),
-                                transforms.RandomHorizontalFlip(),
-                                transforms.ToTensor(),
-                                transforms.Normalize([0.5], [0.5])]
-        test_transforms_list = [transforms.Resize(self.input_size),
-                                transforms.ToTensor(),
-                                transforms.Normalize([0.5], [0.5])]
-        if noisy_test: # For Gaussian Noise evalmode. Should be modified.
-            test_transforms_list.append(transforms.Lambda(lambda x: sqrt(noisy_test)*torch.randn_like(x) + x))
+                                transforms.RandomHorizontalFlip()]
+        test_transforms_list = [transforms.Resize(self.input_size)]
+
+        if test_noise_type:
+            test_transforms_list.append(Augment(test_noise_type, test_noise_param))
 
         if self.structure == 'cutout':
             print('Cutout')
             train_transforms_list.append(Cutout(length=self.config['model']['cutout']['length']))
+
+        train_transforms_list = train_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
+        test_transforms_list = test_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
 
         if 'FC' in self.model:
             train_transforms_list.append(transforms.Lambda(lambda x: torch.flatten(x)))
@@ -62,6 +63,40 @@ class DataWrapper(object):
         valid_loader = DataLoader(test_dataset, batch_size=self.batch_size,
                                   num_workers=self.num_workers, drop_last=False, shuffle=False)
         return train_loader, valid_loader
+
+class Augment(object):
+    def __init__(self, noise_type, noise_param):
+        self.noise_type = noise_type
+        self.noise_param = noise_param
+
+    def _uniform(self, img):
+        return self.noise_param*torch.rand_like(img) + img
+
+    def _gaussian(self, img):
+        return sqrt(self.noise_param)*torch.randn_like(img) + img
+
+    def _contrast(self, img):
+        return transforms.ColorJitter(brightness=0, contrast=self.noise_param, saturation=0, hue=0)(img)
+
+    def _low_pass(self, img):
+        return img.filter(ImageFilter.GaussianBlur(self.noise_param))
+
+    def _high_pass(self, img):
+        mu = torch.mean(img)
+        low_pass = img.filter(ImageFilter.GaussianBlur(self.noise_param))
+        high_pass = img - low_pass
+        new_mu = torch.mean(high_pass)
+        new_img = high_pass + mu - new_mu
+        return new_img
+
+    def _hue(self, img):
+        return transforms.ColorJitter(brightness=0, contrast=0, saturation=0, hue=self.noise_param)(img)
+
+    def _saturate(self, img):
+        return transforms.ColorJitter(brightness=0, contrast=0, saturation=self.noise_param, hue=0)(img)
+
+    def __call__(self, img):
+        return getattr(self, '_{}'.format(self.noise_type))(img)
 
 
 class Cutout(object):

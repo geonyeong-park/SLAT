@@ -12,7 +12,7 @@ from math import sqrt
 import numpy as np
 
 import advertorch
-from advertorch.attacks import LinfPGDAttack
+from advertorch.attacks import LinfPGDAttack, L2PGDAttack
 from advertorch.context import ctx_noparamgrad_and_eval
 from model.FC import NoisyFC
 from model.AllCNN import NoisyAllConv
@@ -62,9 +62,9 @@ class GenByNoise(object):
         self.tsne = TSNE(n_components=2, perplexity=20, init='pca', n_iter=3000)
 
         # In case for testing adversarial vulnerability or do training
-        self.adversary = LinfPGDAttack(
-            self.model, loss_fn=nn.CrossEntropyLoss(), eps=0.3,
-            nb_iter=7, eps_iter=0.01, rand_init=True, clip_min=-2.0, clip_max=2.0,
+        self.adversary = L2PGDAttack(
+            self.model, loss_fn=nn.CrossEntropyLoss(), eps=0.1,
+            nb_iter=40, eps_iter=0.01, rand_init=True, clip_min=-2.0, clip_max=2.0,
             targeted=False)
 
     def _get_device(self):
@@ -258,11 +258,21 @@ class GenByNoise(object):
             self.log_loss['val_KL'].append(KL_diff)
             print('KL difference between clean and noisy data: {}'.format(KL_diff))
 
-    def _test_gaussian(self):
-        var_noise_in_data = [0., 0.2, 0.4, 0.6, 0.8, 1.0]
-        for var in var_noise_in_data:
-            _, self.valid_loader = self.dataset.get_data_loaders(var)
-            print('[Test] Variance of input noise={}'.format(var))
+    def _test_distortion_robustness(self, mode):
+        noise_param = {
+            'uniform': [0., 0.2, 0.4, 0.6, 0.8, 1.0],
+            'gaussian': [0., 0.2, 0.4, 0.6, 0.8, 1.0],
+            'contrast': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
+            'low_pass': [0., 1., 1.5, 2., 2.5, 3.],
+            'high_pass': [1000., 3., 1.5, 1., 0.7, 0.45],
+            'hue': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
+            'saturate': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
+        }
+        param = noise_param[mode]
+
+        for val in param:
+            _, self.valid_loader = self.dataset.get_data_loaders(mode, val)
+            print('[Test] Variance of {}={}'.format(mode, val))
             self._validation(None, None, False)
             self._KL_div()
 
@@ -278,11 +288,12 @@ class GenByNoise(object):
         self._PCA_tSNE()
         self.model.to(self.device)
 
-        assert mode in self.config['model']['evalmode']
-        if mode == 'gaussian':
-            self._test_gaussian()
+        if mode in self.config['model']['evalmode']:
+            self._test_distortion_robustness(mode)
         elif mode == 'adv_attack':
             self._test_adv_vulnerability()
+        else:
+            raise ValueError('Not implemented')
 
         print('Test finished')
 
