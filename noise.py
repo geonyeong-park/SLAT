@@ -159,7 +159,7 @@ class GenByNoise(object):
 
         if self.using_adv_noise:
             noise_shape_wh = (x.shape[0], x.shape[2]**2)
-            adv_noise_input = self.model.noisy_module[0].spatial_noise_layer(sqrt(0.01)*torch.randn(noise_shape_wh).to('cuda'))
+            adv_noise_input = self.model.noisy_module[0].spatial_noise_layer(sqrt(0.001)*torch.randn(noise_shape_wh).to('cuda'))
             inf_norm = torch.mean(torch.norm(adv_noise_input, float('inf'), dim=1))
             fro_norm = torch.mean(torch.norm(adv_noise_input, float(2), dim=1))
             print('[{}] epoch || inf norm: {}, l2 norm: {}'.format(epoch, inf_norm, fro_norm))
@@ -265,7 +265,7 @@ class GenByNoise(object):
             'gaussian': [0., 0.2, 0.4, 0.6, 0.8, 1.0],
             'contrast': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
             'low_pass': [0., 1., 1.5, 2., 2.5, 3.],
-            'high_pass': [1000., 3., 1.5, 1., 0.7, 0.45],
+            'high_pass': [5., 3., 1.5, 1., 0.7, 0.45],
             'hue': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
             'saturate': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
         }

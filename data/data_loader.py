@@ -5,7 +5,8 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torchvision import datasets
 import importlib
-from PIL import Image
+import PIL
+from PIL import Image, ImageChops
 from PIL import ImageFilter
 
 
@@ -36,11 +37,15 @@ class DataWrapper(object):
                                 transforms.RandomHorizontalFlip()]
         test_transforms_list = [transforms.Resize(self.input_size)]
 
-        if test_noise_type:
-            test_transforms_list.append(Augment(test_noise_type, test_noise_param))
+        if test_noise_type == 'low_pass':
+            test_transforms_list.append(Augment('low_pass', test_noise_param))
 
         train_transforms_list = train_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
         test_transforms_list = test_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
+
+        if not test_noise_type == 'low_pass' and test_noise_type is not None:
+            print(test_noise_type)
+            test_transforms_list.append(Augment(test_noise_type, test_noise_param))
 
         if self.structure == 'cutout':
             print('Cutout')
@@ -82,11 +87,17 @@ class Augment(object):
         return img.filter(ImageFilter.GaussianBlur(self.noise_param))
 
     def _high_pass(self, img):
-        mu = torch.mean(img)
+        mu = PIL.ImageStat.Stat(img).mean
         low_pass = img.filter(ImageFilter.GaussianBlur(self.noise_param))
-        high_pass = img - low_pass
-        new_mu = torch.mean(high_pass)
-        new_img = high_pass + mu - new_mu
+
+        high_pass = ImageChops.subtract(img, low_pass)
+
+        new_mu = PIL.ImageStat.Stat(high_pass).mean
+        delta_mu = [x-y for x,y in zip(mu, new_mu)]
+        delta_mu = np.tile(delta_mu, (img.size[0], img.size[1], 1))
+
+        new_img = np.asarray(high_pass) + delta_mu
+        new_img = Image.fromarray(new_img.astype(np.uint8))
         return new_img
 
     def _hue(self, img):

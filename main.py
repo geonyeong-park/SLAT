@@ -98,6 +98,7 @@ def main(config, args):
         checkpoint = torch.load(args.resume)
         mode = args.resume_mode
         print('load {}'.format(args.resume))
+        print('resume mode: {}'.format(mode))
     if args.ld is not None:
         print('Lambda: ', args.ld)
         config['train']['ld'][config['dataset']['name']] = args.ld

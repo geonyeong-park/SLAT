@@ -101,15 +101,15 @@ class NoisyCNNModule(NoisyModule):
         self.norm_penalty = torch.tensor(0.).to('cuda')
         if self.training:
             if self.architecture == 'GNI':
-                x_hat = x + torch.randn_like(x) * sqrt(0.01)
+                x_hat = x + torch.randn_like(x) * sqrt(0.001)
                 return x_hat
             elif self.architecture == 'advGNI':
                 noise_shape_ch, noise_shape_wh = x.shape[ :2], (x.shape[0], self.in_wh*self.in_wh)
-                noise_wh = self.spatial_noise_layer(sqrt(0.01)*torch.randn(noise_shape_wh).to('cuda'))
+                noise_wh = self.spatial_noise_layer(sqrt(0.001)*torch.randn(noise_shape_wh).to('cuda'))
                 noise_wh = noise_wh.view(-1, 1, self.in_wh, self.in_wh).repeat(1,x.shape[1],1,1)
 
                 if not self.image:
-                    noise_ch = self.noise_layer(sqrt(0.01)*torch.randn(noise_shape_ch).to('cuda'))
+                    noise_ch = self.noise_layer(sqrt(0.001)*torch.randn(noise_shape_ch).to('cuda'))
                     noise_ch = noise_ch.view(-1,self.in_unit,1,1).repeat(1,1,x.shape[-2],x.shape[-1])
                     self.norm_penalty += torch.mean(torch.norm(noise_ch, float(self.norm), dim=1)).to('cuda')
                     x_hat = x + (noise_ch + noise_wh) / 2.
