@@ -7,17 +7,19 @@ from math import sin, cos, sqrt
 
 
 class basemodel(nn.Module):
-    def __init__(self, n_hidden):
+    def __init__(self, n_hidden, covariance):
         super(basemodel, self).__init__()
 
         self.sigmoid = nn.Sigmoid()
         self.fc = nn.Linear(2, n_hidden)
         self.logit = nn.Linear(n_hidden, 2)
 
-        self.noise_L1 = nn.Linear(2, 2, bias=False).apply(self.tril_init)
-        self.noise_L2 = nn.Linear(n_hidden, n_hidden, bias=False).apply(self.tril_init)
+        self.noise_L1 = nn.Linear(2, 2, bias=False)
+        self.noise_L1 = self.noise_L1.apply(self.tril_init) if covariance else self.noise_L1.apply(self.eye_init)
+        self.noise_L2 = nn.Linear(n_hidden, n_hidden, bias=False)
+        self.noise_L2 = self.noise_L2.apply(self.tril_init) if covariance else self.noise_L2.apply(self.eye_init)
 
-        self.mask = lambda x: torch.tril(torch.ones_like(x)).to('cuda')
+        self.mask = lambda x: torch.tril(torch.ones_like(x)).to('cuda') if covariance else torch.eye(x.size(0)).to('cuda')
         self.noise_L1.weight.register_hook(self.get_zero_grad_hook(self.mask(self.noise_L1.weight)))
         self.noise_L2.weight.register_hook(self.get_zero_grad_hook(self.mask(self.noise_L2.weight)))
 
@@ -25,6 +27,11 @@ class basemodel(nn.Module):
         if isinstance(m, nn.Linear):
             with torch.no_grad():
                 m.weight.copy_(torch.tril(m.weight))
+
+    def eye_init(self, m):
+        if isinstance(m, nn.Linear):
+            with torch.no_grad():
+                m.weight.copy_(torch.eye(m.weight.size(0)))
 
     # Zero out gradients
     def get_zero_grad_hook(self, mask):

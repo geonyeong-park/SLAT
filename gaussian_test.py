@@ -56,6 +56,7 @@ ld = args.ld
 n_hidden = args.n_hidden[0]
 if args.eval:
     n_hidden = args.n_hidden
+covariance = False
 
 # ---------------------------------------------------------
 data_loader = DataGen(n_samples, data_noise, data_format)
@@ -67,7 +68,7 @@ Y_test = torch.tensor(data_loader.y_test).long().to('cuda')
 cen=torch.nn.CrossEntropyLoss()
 
 def train():
-    encoder = basemodel(n_hidden).to('cuda')
+    encoder = basemodel(n_hidden, covariance).to('cuda')
 
     opt_theta = torch.optim.SGD(list(encoder.fc.parameters())+list(encoder.logit.parameters()), lr=lr, momentum=0.9)
     opt_noise  = torch.optim.SGD(list(encoder.noise_L1.parameters())+list(encoder.noise_L2.parameters()), lr=lr, momentum=0.9)
@@ -120,7 +121,7 @@ def eval(n_hidden_list):
     cos_per_dim = []
 
     for i, n in enumerate(n_hidden_list):
-        encoder = basemodel(n).to('cuda')
+        encoder = basemodel(n, covariance).to('cuda')
         checkpoint = torch.load(ckpt(n, ld))
 
         encoder.load_state_dict(checkpoint['model'])
@@ -136,7 +137,7 @@ def eval(n_hidden_list):
         noise_hidden_cov = np.matmul(hidden_L, hidden_L.T)
 
         _, eigen_ld, eigen_v = np.linalg.svd(noise_hidden_cov)
-        ev_per_dim.append(eigen_ld[ :4])
+        ev_per_dim.append(eigen_ld[ :2])
 
         _, h = encoder(X)
         mu1, mu2 = torch.mean(h[ :n_samples//2], dim=0), torch.mean(h[n_samples//2: ], dim=0)
@@ -144,7 +145,7 @@ def eval(n_hidden_list):
         dmu = dmu.data.cpu().numpy()
 
         cos_sim = []
-        for v in eigen_v[ :4]:
+        for v in eigen_v[ :2]:
             cos = np.abs(np.dot(dmu, v)) / np.linalg.norm(dmu)
             cos_sim.append(cos)
         cos_per_dim.append(cos_sim)
