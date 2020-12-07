@@ -39,12 +39,12 @@ class DataWrapper(object):
         if test_noise_type:
             test_transforms_list.append(Augment(test_noise_type, test_noise_param))
 
+        train_transforms_list = train_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
+        test_transforms_list = test_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
+
         if self.structure == 'cutout':
             print('Cutout')
             train_transforms_list.append(Cutout(length=self.config['model']['cutout']['length']))
-
-        train_transforms_list = train_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
-        test_transforms_list = test_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
 
         if 'FC' in self.model:
             train_transforms_list.append(transforms.Lambda(lambda x: torch.flatten(x)))

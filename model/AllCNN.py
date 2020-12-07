@@ -95,6 +95,7 @@ class NoisyCNNModule(NoisyModule):
                 self.spatial_noise_layer.weight.register_hook(self._get_zero_grad_hook(self.mask))
             else:
                 self.spatial_noise_layer = self._nonlinear_noise(in_wh*in_wh)
+        if self.image: self.noise_layer = nn.Conv2d(3,3,1)
 
     def forward(self, x):
         self.norm_penalty = torch.tensor(0.).to('cuda')
