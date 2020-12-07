@@ -63,7 +63,7 @@ class GenByNoise(object):
 
         # In case for testing adversarial vulnerability or do training
         self.adversary = L2PGDAttack(
-            self.model, loss_fn=nn.CrossEntropyLoss(), eps=0.1,
+            self.model, loss_fn=nn.CrossEntropyLoss(), eps=1.,
             nb_iter=40, eps_iter=0.01, rand_init=True, clip_min=-2.0, clip_max=2.0,
             targeted=False)
 
@@ -158,7 +158,8 @@ class GenByNoise(object):
             n_iter += 1
 
         if self.using_adv_noise:
-            adv_noise_input = self.model.noisy_module[0].noise_layer(sqrt(0.01)*torch.randn_like(x))
+            noise_shape_wh = (x.shape[0], x.shape[2]**2)
+            adv_noise_input = self.model.noisy_module[0].spatial_noise_layer(sqrt(0.01)*torch.randn(noise_shape_wh).to('cuda'))
             inf_norm = torch.mean(torch.norm(adv_noise_input, float('inf'), dim=1))
             fro_norm = torch.mean(torch.norm(adv_noise_input, float(2), dim=1))
             print('[{}] epoch || inf norm: {}, l2 norm: {}'.format(epoch, inf_norm, fro_norm))

@@ -84,9 +84,6 @@ class NoisyCNNModule(NoisyModule):
         self.channel = channel
         self.in_wh = in_wh
 
-        if self.image:
-            self._image_noise()
-
         if self.architecture == 'dropout': self.drop = nn.Dropout()
 
         if self.architecture == 'advGNI':
@@ -99,33 +96,26 @@ class NoisyCNNModule(NoisyModule):
             else:
                 self.spatial_noise_layer = self._nonlinear_noise(in_wh*in_wh)
 
-    def _image_noise(self):
-        self.noise_layer = nn.Conv2d(self.channel, self.channel, 1)
-
     def forward(self, x):
         self.norm_penalty = torch.tensor(0.).to('cuda')
         if self.training:
             if self.architecture == 'GNI':
-                x_hat = x + torch.randn_like(x) * sqrt(0.05)
+                x_hat = x + torch.randn_like(x) * sqrt(0.01)
                 return x_hat
             elif self.architecture == 'advGNI':
-                if self.image:
-                    noise_shape = x.shape
-                    noise = self.noise_layer(sqrt(0.01)*torch.randn(noise_shape).to('cuda'))
-                    x_hat = x + noise
-                    self.norm_penalty += torch.mean(torch.norm(noise, float(self.norm), dim=1)).to('cuda')
-                    return x_hat
-                else:
-                    noise_shape_ch, noise_shape_wh = x.shape[ :2], (x.shape[0], self.in_wh*self.in_wh)
-                    noise_ch = self.noise_layer(sqrt(0.01)*torch.randn(noise_shape_ch).to('cuda'))
-                    noise_wh = self.spatial_noise_layer(sqrt(0.01)*torch.randn(noise_shape_wh).to('cuda'))
+                noise_shape_ch, noise_shape_wh = x.shape[ :2], (x.shape[0], self.in_wh*self.in_wh)
+                noise_wh = self.spatial_noise_layer(sqrt(0.01)*torch.randn(noise_shape_wh).to('cuda'))
+                noise_wh = noise_wh.view(-1, 1, self.in_wh, self.in_wh).repeat(1,x.shape[1],1,1)
 
+                if not self.image:
+                    noise_ch = self.noise_layer(sqrt(0.01)*torch.randn(noise_shape_ch).to('cuda'))
                     noise_ch = noise_ch.view(-1,self.in_unit,1,1).repeat(1,1,x.shape[-2],x.shape[-1])
-                    noise_wh = noise_wh.view(-1, 1, self.in_wh, self.in_wh).repeat(1,x.shape[1],1,1)
-                    x_hat = x + (noise_ch + noise_wh) / 2.
                     self.norm_penalty += torch.mean(torch.norm(noise_ch, float(self.norm), dim=1)).to('cuda')
-                    self.norm_penalty += torch.mean(torch.norm(noise_wh, float(self.norm), dim=1)).to('cuda')
-                    return x_hat
+                    x_hat = x + (noise_ch + noise_wh) / 2.
+                else:
+                    x_hat = x + noise_wh
+                self.norm_penalty += torch.mean(torch.norm(noise_wh, float(self.norm), dim=1)).to('cuda')
+                return x_hat
 
             elif self.architecture == 'dropout':
                 x_hat = self.drop(x) if not self.image else x
