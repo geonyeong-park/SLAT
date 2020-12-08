@@ -30,6 +30,8 @@ dataset:
     channel: 3
     num_cls: 10
     num_workers: 1
+    mean: [0.4914, 0.4822, 0.4465]
+    std: [0.2471, 0.2435, 0.2616]
 
 
 model:
@@ -37,7 +39,7 @@ model:
   evalmode: ['uniform', 'gaussian', 'contrast', 'low_pass','high_pass', 'hue', 'saturate']
   MNIST: 'FC' # FC for adversarial noise injection, NormalFC for gaussian noise injection
   SVHN: 'AllCNN'
-  CIFAR10: 'AllCNN'
+  CIFAR10: 'ResNet'
 
   FC:
     module: [512, 256, 128]
@@ -45,23 +47,24 @@ model:
     noise_num_layer: 1
     norm: '2' # 'inf' for infnorm penalty. Integer otherwise.
   AllCNN:
-    noise_linear: True
-    noise_num_layer: 1
+    eta: 0.03
     norm: '2'
+  ResNet:
+    eta: 0.02
   cutout:
     length: 16
   mixup:
     alpha: 1.
 
 train:
-  num_epochs: 300
+  num_epochs: 15
   ld:
     MNIST: 0.01
     CIFAR10: 0.8
 optimizer:
   momentum: 0.9
   lr:
-    MNIST: 0.001
-    CIFAR10: 0.05
+    MNIST: 0.2
+    CIFAR10: 0.2
   weight_decay: 0.0005
   lr_decay: 0.99

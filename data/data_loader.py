@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torchvision import datasets
+from model.utils import mean, std
 import importlib
 import PIL
 from PIL import Image, ImageChops
@@ -40,11 +41,10 @@ class DataWrapper(object):
         if test_noise_type == 'low_pass':
             test_transforms_list.append(Augment('low_pass', test_noise_param))
 
-        train_transforms_list = train_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
-        test_transforms_list = test_transforms_list + [transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
+        train_transforms_list = train_transforms_list + [transforms.ToTensor(), transforms.Normalize(mean, std)]
+        test_transforms_list = test_transforms_list + [transforms.ToTensor(), transforms.Normalize(mean, std)]
 
         if not test_noise_type == 'low_pass' and test_noise_type is not None:
-            print(test_noise_type)
             test_transforms_list.append(Augment(test_noise_type, test_noise_param))
 
         if self.structure == 'cutout':
