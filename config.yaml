@@ -35,17 +35,20 @@ dataset:
 
 
 model:
-  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'FGSM', 'cutout']
+  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'FGSM', 'cutout', 'PGD']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
   CIFAR10: 'ResNet'
 
   ResNet:
     eta: 0.02
+    KL: True
   cutout:
     length: 16
   mixup:
     alpha: 1.
+  PGD:
+    iters: 7
 
 train:
   num_epochs: 30

@@ -7,8 +7,8 @@ from math import sqrt
 mean = [0.4914, 0.4822, 0.4465]
 std = [0.2471, 0.2435, 0.2616]
 
-mu_t = torch.tensor(mean).view(3,1,1).cuda()
-std_t = torch.tensor(std).view(3,1,1).cuda()
+mu_t = torch.tensor(mean).view(3,1,1).to('cuda')
+std_t = torch.tensor(std).view(3,1,1).to('cuda')
 
 upper_limit = ((1. - mu_t)/ std_t)
 lower_limit = ((0. - mu_t)/ std_t)
@@ -67,10 +67,10 @@ def clamp(X, lower_limit, upper_limit):
     return torch.max(torch.min(X, upper_limit), lower_limit)
 
 def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
-    max_loss = torch.zeros(y.shape[0]).cuda()
-    max_delta = torch.zeros_like(X).cuda()
+    max_loss = torch.zeros(y.shape[0]).to('cuda')
+    max_delta = torch.zeros_like(X).to('cuda')
     for zz in range(restarts):
-        delta = torch.zeros_like(X).cuda()
+        delta = torch.zeros_like(X).to('cuda')
         for i in range(len(epsilon)):
             delta[:, i, :, :].uniform_(-epsilon[i][0][0].item(), epsilon[i][0][0].item())
         delta.data = clamp(delta, lower_limit - X, upper_limit - X)

@@ -26,7 +26,7 @@ def get_arguments():
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutmix', 'cutout'")
+                        help="'base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutmix', 'cutout', 'PGD'")
     parser.add_argument("--data_perturb", type=str, default=None, required=False,
                         help="base, mixup, cutmix, cutout")
     parser.add_argument("--resume", type=str, default=None,
@@ -35,6 +35,10 @@ def get_arguments():
                         required=False, help="normal or adv_attack")
     parser.add_argument("--ld", type=float, default=None,
                         required=False, help="KL penalty")
+    parser.add_argument("--eta", type=float, default=None,
+                        required=False, help="Variance")
+    parser.add_argument("--no_KL", default=False, action='store_true', required=False, help="")
+    parser.add_argument("--PGD_iters", default=7, type=int, required=False, help="")
     parser.add_argument("--mixup_alpha", type=float, default=None,
                         required=False, help="")
     parser.add_argument("--num_epochs", type=int, default=None,
@@ -98,6 +102,15 @@ def main(config, args):
     if args.ld is not None:
         print('KL Lambda: ', args.ld)
         config['train']['ld'][config['dataset']['name']] = args.ld
+    if args.eta is not None:
+        print('Eta: ', args.eta)
+        config['model']['ResNet']['eta'] = args.eta
+    if args.no_KL:
+        print('KL: False')
+        config['model']['ResNet']['KL'] = not args.no_KL
+    if args.PGD_iters:
+        print('PGD iters: {}'.format(args.PGD_iters))
+        config['model']['PGD']['iters'] = args.PGD_iters
     if args.num_epochs is not None:
         print('epochs: ', args.num_epochs)
         config['train']['num_epochs'] = args.num_epochs

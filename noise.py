@@ -56,9 +56,13 @@ class GenByNoise(object):
         self.val_epoch = 1
 
         self.tsne = TSNE(n_components=2, perplexity=20, init='pca', n_iter=3000)
+
         # For adversarial robustness test
         self.epsilon = (8/ 255.) / std_t
         self.pgd_alpha = (2 / 255.) / std_t
+
+        # For KL-divergence regularization
+        self.do_KL_reg = self.config['model']['ResNet']['KL']
 
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -129,7 +133,8 @@ class GenByNoise(object):
                 logit_clean = self.model(x)
                 loss = self.cen(logit_clean, y)
 
-                loss.backward()
+                retain = True if self.do_KL_reg else False
+                loss.backward(retain_graph=retain)
                 grad_mask.append(x.grad.data)
 
                 # -------------------------
@@ -139,35 +144,68 @@ class GenByNoise(object):
                 self.model.zero_grad()
 
                 logit_adv = self.model(x, grad_mask, add_adv=True)
-                yhat_noise = nn.Softmax(dim=1)(logit_adv)
 
                 # Main loss with adversarial example
                 adv_loss = self.cen(logit_adv, y)
 
-                # Regularize KL-divergence for approximated second-order penalty
-                logit_clean = self.model(x)
-                yhat_clean = nn.Softmax(dim=1)(logit_clean)
-                KL = nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
-
-                loss = adv_loss + self.ld * KL
+                if self.do_KL_reg:
+                    # Regularize KL-divergence for approximated second-order penalty
+                    yhat_clean = nn.Softmax(dim=1)(logit_clean)
+                    yhat_noise = nn.Softmax(dim=1)(logit_adv)
+                    KL = nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
+                    loss = adv_loss + self.ld * KL
+                    if i % 100 == 0: print('adv_loss: {}, KL: {}'.format(adv_loss, KL))
+                else:
+                    loss = adv_loss
                 loss.backward()
                 self.opt_theta.step()
 
             elif self.structure == 'FGSM':
                 grad_mask = []
                 x.requires_grad = True
-                logit = self.model(x)
-                loss = self.cen(logit, y)
+                logit_clean = self.model(x)
+                yhat_clean = nn.Softmax(dim=1)(logit_clean)
+                loss = self.cen(logit_clean, y)
 
+                retain = True if self.do_KL_reg else False
                 self.model.zero_grad()
-                loss.backward()
+                loss.backward(retain_graph=retain)
                 grad_mask.append(x.grad.data)
 
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
 
-                logit = self.model(x, grad_mask, add_adv=True)
-                loss = self.cen(logit, y)
+                logit_adv = self.model(x, grad_mask, add_adv=True)
+                adv_loss = self.cen(logit_adv, y)
+
+                if self.do_KL_reg:
+                    yhat_noise = nn.Softmax(dim=1)(logit_adv)
+                    yhat_clean = nn.Softmax(dim=1)(logit_clean)
+                    KL = nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
+                    loss = adv_loss + self.ld * KL
+                else:
+                    loss = adv_loss
+                loss.backward()
+                self.opt_theta.step()
+
+            elif self.structure == 'PGD':
+                # Code is partially from
+                # https://github.com/locuslab/fast_adversarial/blob/master/CIFAR10/train_pgd.py
+                delta = torch.zeros_like(x).to('cuda')
+                delta.requires_grad = True
+                for _ in range(self.config['model']['PGD']['iters']):
+                    output = self.model(x + delta)
+                    loss = self.cen(output, y)
+                    loss.backward()
+
+                    grad = delta.grad.detach()
+                    delta.data = clamp(delta + self.pgd_alpha * torch.sign(grad), -self.epsilon, self.epsilon)
+                    delta.data = clamp(delta, lower_limit - x, upper_limit - x)
+                    delta.grad.zero_()
+                delta = delta.detach()
+                output = self.model(x + delta)
+                loss = self.cen(output, y)
+                self.opt_theta.zero_grad()
                 loss.backward()
                 self.opt_theta.step()
 
@@ -180,7 +218,7 @@ class GenByNoise(object):
             if n_iter % self.config['exp_setting']['log_every_n_steps'] == 0:
                 self.writer.add_scalar('train/loss', loss, global_step=n_iter)
                 self.log_loss['train_loss'].append(loss.data.cpu().numpy())
-                if self.using_adv_noise:
+                if self.using_adv_noise and self.do_KL_reg:
                     self.log_loss['train_KL'].append(KL.data.cpu().numpy())
 
             n_iter += 1
@@ -196,11 +234,15 @@ class GenByNoise(object):
             torch.save({
                 'model': self.model.state_dict(),
             }, os.path.join(self.snapshot_dir, 'pretrain_'+str(epoch)+'.pth'))
-            raise Warning('Erroneous behavior, epoch={}, \
-                          acc={}, prev_adv_acc={}'.format(epoch, robust_acc, self.prev_adv_acc))
+            raise Warning('Erroneous behavior, epoch={}, acc={}, prev_adv_acc={}'.format(
+                epoch, robust_acc, self.prev_adv_acc))
+        elif robust_acc > self.prev_adv_acc:
+            torch.save({
+                'model': self.model.state_dict(),
+            }, os.path.join(self.snapshot_dir, 'pretrain_best.pth'))
+
         print('[{} epoch, adv_test] acc={}'.format(epoch, robust_acc))
         self.prev_adv_acc = robust_acc
-
         return n_iter
 
     def _step(self, model, x, y):
@@ -220,7 +262,7 @@ class GenByNoise(object):
             lam = np.random.beta(alpha, alpha)
 
             batch_size = x.size()[0]
-            index = torch.randperm(batch_size).cuda()
+            index = torch.randperm(batch_size).to('cuda')
 
             mixed_x = lam * x + (1 - lam) * x[index, :]
             y_a, y_b = y, y[index]
