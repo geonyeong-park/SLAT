@@ -1,7 +1,6 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-from model.FC import NoisyModule
 from math import sqrt
 
 
@@ -35,7 +34,6 @@ class NoisyCNNModule(nn.Module):
                         sgn_mask = grad_mask.data.sign()
                         var_mask = torch.abs(grad_mask.data)
 
-                    #adv_noise_raw = torch.abs(torch.sqrt(var_mask)*torch.randn_like(x)) * self.eta
                     adv_noise_raw = torch.abs(torch.randn_like(x)) * self.eta
                     adv_noise = sgn_mask * adv_noise_raw
                     if self.input: adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)

@@ -4,6 +4,8 @@ from torchvision import models
 from model.utils import NoisyCNNModule, mean, std
 import torch.nn.functional as F
 
+# PreActResNet Code is largely based on:
+# https://github.com/locuslab/fast_adversarial/tree/master/CIFAR10
 
 class PreActResNet(nn.Module):
     def __init__(self, block, num_blocks, config):
@@ -14,7 +16,7 @@ class PreActResNet(nn.Module):
         self.num_cls = config['dataset'][self.data_name]['num_cls']
         self.architecture = config['model']['baseline']
         self.use_adversarial_noise = True if 'advGNI' in self.architecture else False
-        eta = self.config['model']['AllCNN']['eta']
+        eta = self.config['model']['ResNet']['eta']
 
         self.in_planes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -27,9 +29,6 @@ class PreActResNet(nn.Module):
 
         self.noisy_module = nn.ModuleList([
             NoisyCNNModule(self.architecture, eta, input=True),
-            NoisyCNNModule(self.architecture, eta),
-            NoisyCNNModule(self.architecture, eta),
-            NoisyCNNModule(self.architecture, eta),
         ])
 
         self.grads = {}
@@ -48,29 +47,15 @@ class PreActResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, grad_mask=None, add_adv=False, hook=False):
-        if not add_adv: grad_mask = [None, None, None, None]
+        if not add_adv: grad_mask = [None]
         x_hat = self.noisy_module[0](x, grad_mask[0], add_adv)
 
-        h_ = self.conv1(x_hat)
-        if self.architecture == 'advGNI' and hook:
-            h_.retain_grad()
-            h_.register_hook(self.save_grad('conv1'))
-        h = self.noisy_module[1](h_, grad_mask[1], add_adv)
-
-        h_ = self.layer1(h)
-        if self.architecture == 'advGNI' and hook:
-            h_.retain_grad()
-            h_.register_hook(self.save_grad('layer1'))
-        h = self.noisy_module[2](h_, grad_mask[2], add_adv)
-
-        h_ = self.layer2(h)
-        if self.architecture == 'advGNI' and hook:
-            h_.retain_grad()
-            h_.register_hook(self.save_grad('layer2'))
-        h = self.noisy_module[3](h_, grad_mask[3], add_adv)
-
-        h = self.layer3(h_)
+        h = self.conv1(x_hat)
+        h = self.layer1(h)
+        h = self.layer2(h)
+        h = self.layer3(h)
         h = self.layer4(h)
+
         h = F.relu(self.bn(h))
         h = F.avg_pool2d(h, 4)
         h = h.view(h.size(0), -1)

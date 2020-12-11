@@ -34,10 +34,11 @@ class GenByNoise(object):
         self.num_cls = config['dataset'][self.data_name]['num_cls']
         self.structure = config['model']['baseline']
 
-        structure = config['model'][self.data_name]
-        if structure == 'ResNet':
+        network = config['model'][self.data_name]
+        if network == 'ResNet':
             self.model = PreActResNet18(config).to(self.device)
-            self.grad_key = ['conv1', 'layer1', 'layer2']
+        else:
+            raise ValueError('Not implemented yet')
 
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
@@ -46,11 +47,10 @@ class GenByNoise(object):
         print('Using adversarial noise distribution: ', self.using_adv_noise)
 
         self.log_loss = {}
-        self.log_loss['train_theta_loss'] = []
-        self.log_loss['train_noise_loss'] = []
+        self.log_loss['train_loss'] = []
+        self.log_loss['train_KL'] = []
         self.log_loss['val_acc'] = []
         self.log_loss['val_loss'] = []
-        self.log_loss['val_KL'] = []
         self.log_loss['training_time'] = 0.
         self.ld = config['train']['ld'][self.data_name]
         self.val_epoch = 1
@@ -126,13 +126,11 @@ class GenByNoise(object):
                 # -------------------------
                 grad_mask = []
                 x.requires_grad = True
-                logit = self.model(x, hook=True)
-                loss = self.cen(logit, y)
+                logit_clean = self.model(x)
+                loss = self.cen(logit_clean, y)
 
-                self.model.zero_grad()
                 loss.backward()
                 grad_mask.append(x.grad.data)
-                for k in self.grad_key: grad_mask.append(self.model.grads[k])
 
                 # -------------------------
                 # 2. Generate adversarial example
@@ -140,11 +138,21 @@ class GenByNoise(object):
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
 
-                logit = self.model(x, grad_mask, add_adv=True)
-                loss = self.cen(logit, y)
+                logit_adv = self.model(x, grad_mask, add_adv=True)
+                yhat_noise = nn.Softmax(dim=1)(logit_adv)
+
+                # Main loss with adversarial example
+                adv_loss = self.cen(logit_adv, y)
+
+                # Regularize KL-divergence for approximated second-order penalty
+                logit_clean = self.model(x)
+                yhat_clean = nn.Softmax(dim=1)(logit_clean)
+                KL = nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
+
+                loss = adv_loss + self.ld * KL
                 loss.backward()
                 self.opt_theta.step()
-                self.model.grads = {} # Fresh up the gradient cache
+
             elif self.structure == 'FGSM':
                 grad_mask = []
                 x.requires_grad = True
@@ -154,7 +162,6 @@ class GenByNoise(object):
                 self.model.zero_grad()
                 loss.backward()
                 grad_mask.append(x.grad.data)
-                for k in self.grad_key: grad_mask.append(None)
 
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
@@ -163,6 +170,7 @@ class GenByNoise(object):
                 loss = self.cen(logit, y)
                 loss.backward()
                 self.opt_theta.step()
+
             else:
                 self.opt_theta.zero_grad()
                 loss = self._step(self.model, x, y)
@@ -170,8 +178,10 @@ class GenByNoise(object):
                 self.opt_theta.step()
 
             if n_iter % self.config['exp_setting']['log_every_n_steps'] == 0:
-                self.writer.add_scalar('train_loss/theta', loss, global_step=n_iter)
-                self.log_loss['train_theta_loss'].append(loss.data.cpu().numpy())
+                self.writer.add_scalar('train/loss', loss, global_step=n_iter)
+                self.log_loss['train_loss'].append(loss.data.cpu().numpy())
+                if self.using_adv_noise:
+                    self.log_loss['train_KL'].append(KL.data.cpu().numpy())
 
             n_iter += 1
             self.theta_scheduler.step()
@@ -258,68 +268,13 @@ class GenByNoise(object):
         print('[{}/{}]: Acc={:.3f}, Loss={:.3f}, LR={:.5f}'.format(epoch, n_iter,
                                                        valid_acc, valid_loss, self.theta_scheduler.get_lr()[0]))
 
-    def _KL_div(self):
-        _, self.clean_valid_loader = self.dataset.get_data_loaders()
-        with torch.no_grad():
-            self.model.eval()
-
-            KL_diff = 0.
-            counter = 0
-
-            for (x_noise, _), (x_clean, _) in zip(self.valid_loader, self.clean_valid_loader):
-                x_noise = x_noise.to(self.device)
-                x_clean = x_clean.to(self.device)
-
-                logit_noise = self.model(x_noise)
-                logit_clean = self.model(x_clean)
-
-                yhat_noise = nn.Softmax(dim=1)(logit_noise)
-                yhat_clean = nn.Softmax(dim=1)(logit_clean)
-
-                KL_diff += nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
-                counter += x_noise.data.size()[0]
-
-            KL_diff /= counter
-            self.log_loss['val_KL'].append(KL_diff)
-            print('KL difference between clean and noisy data: {}'.format(KL_diff))
-
-    def _test_distortion_robustness(self, mode):
-        noise_param = {
-            'uniform': [0., 0.2, 0.4, 0.6, 0.8, 1.0],
-            'gaussian': [0., 0.2, 0.4, 0.6, 0.8, 1.0],
-            'contrast': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
-            'low_pass': [0., 1., 1.5, 2., 2.5, 3.],
-            'high_pass': [5., 3., 1.5, 1., 0.7, 0.45],
-            'hue': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
-            'saturate': [0., 0.1, 0.2, 0.3, 0.4, 0.5],
-        }
-        param = noise_param[mode]
-
-        for val in param:
-            _, self.valid_loader = self.dataset.get_data_loaders(mode, val)
-            print('[Test] Variance of {}={}'.format(mode, val))
-            self._validation(None, None, False)
-            self._KL_div()
-
-        with open(os.path.join(self.log_dir, 'Robust_to_noise_test.pkl'), 'wb') as f:
-            pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
-
-    def _test_adv_vulnerability(self):
-        self._validation(None, None, False, advattack=True)
-
     def test(self, checkpoint, mode):
         self.model.load_state_dict(checkpoint['model'])
         self.model.eval()
         self._PCA_tSNE()
         self.model.to(self.device)
-
-        if mode in self.config['model']['evalmode']:
-            self._test_distortion_robustness(mode)
-        elif mode == 'adv_attack':
-            self._test_adv_vulnerability()
-        else:
-            raise ValueError('Not implemented')
-
+        advattack = True if mode == 'adv_attack' else False
+        self._validation(None, None, False, advattack=advattack)
         print('Test finished')
 
     def _PCA_tSNE(self):
