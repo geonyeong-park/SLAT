@@ -132,7 +132,7 @@ class GenByNoise(object):
                 self.model.zero_grad()
                 loss.backward()
                 grad_mask.append(x.grad.data)
-                #for k in self.grad_key: grad_mask.append(self.model.grads[k])
+                for k in self.grad_key: grad_mask.append(self.model.grads[k])
 
                 # -------------------------
                 # 2. Generate adversarial example
@@ -145,6 +145,24 @@ class GenByNoise(object):
                 loss.backward()
                 self.opt_theta.step()
                 self.model.grads = {} # Fresh up the gradient cache
+            elif self.structure == 'FGSM':
+                grad_mask = []
+                x.requires_grad = True
+                logit = self.model(x)
+                loss = self.cen(logit, y)
+
+                self.model.zero_grad()
+                loss.backward()
+                grad_mask.append(x.grad.data)
+                for k in self.grad_key: grad_mask.append(None)
+
+                self.opt_theta.zero_grad()
+                self.model.zero_grad()
+
+                logit = self.model(x, grad_mask, add_adv=True)
+                loss = self.cen(logit, y)
+                loss.backward()
+                self.opt_theta.step()
             else:
                 self.opt_theta.zero_grad()
                 loss = self._step(self.model, x, y)
@@ -168,7 +186,8 @@ class GenByNoise(object):
             torch.save({
                 'model': self.model.state_dict(),
             }, os.path.join(self.snapshot_dir, 'pretrain_'+str(epoch)+'.pth'))
-            raise ValueError('Early stop due to erroneous behavior, epoch: ', epoch)
+            raise Warning('Erroneous behavior, epoch={}, \
+                          acc={}, prev_adv_acc={}'.format(epoch, robust_acc, self.prev_adv_acc))
         print('[{} epoch, adv_test] acc={}'.format(epoch, robust_acc))
         self.prev_adv_acc = robust_acc
 

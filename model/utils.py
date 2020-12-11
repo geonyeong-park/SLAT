@@ -15,10 +15,11 @@ upper_limit = ((1. - mu_t)/ std_t)
 lower_limit = ((0. - mu_t)/ std_t)
 
 class NoisyCNNModule(nn.Module):
-    def __init__(self, architecture, eta):
+    def __init__(self, architecture, eta, input=False):
         super(NoisyCNNModule, self).__init__()
         self.architecture = architecture
-        self.eta = eta / std_t
+        self.input = input
+        self.eta = eta / std_t if input else eta
 
     def forward(self, x, grad_mask=None, add_adv=False):
         if self.training:
@@ -37,6 +38,21 @@ class NoisyCNNModule(nn.Module):
                     #adv_noise_raw = torch.abs(torch.sqrt(var_mask)*torch.randn_like(x)) * self.eta
                     adv_noise_raw = torch.abs(torch.randn_like(x)) * self.eta
                     adv_noise = sgn_mask * adv_noise_raw
+                    if self.input: adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
+
+                    x_hat = x + adv_noise
+                    return x_hat
+                else:
+                    return x
+            elif self.architecture == 'FGSM':
+                if add_adv and self.input:
+                    assert grad_mask is not None
+                    grad_mask = grad_mask.detach()
+
+                    with torch.no_grad():
+                        sgn_mask = grad_mask.data.sign()
+
+                    adv_noise = sgn_mask * self.eta
                     adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
 
                     x_hat = x + adv_noise

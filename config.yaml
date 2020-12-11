@@ -35,7 +35,7 @@ dataset:
 
 
 model:
-  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'advdrop', 'cutout']
+  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'FGSM', 'cutout']
   evalmode: ['uniform', 'gaussian', 'contrast', 'low_pass','high_pass', 'hue', 'saturate']
   MNIST: 'FC' # FC for adversarial noise injection, NormalFC for gaussian noise injection
   SVHN: 'AllCNN'
@@ -57,7 +57,7 @@ model:
     alpha: 1.
 
 train:
-  num_epochs: 15
+  num_epochs: 30
   ld:
     MNIST: 0.01
     CIFAR10: 0.8

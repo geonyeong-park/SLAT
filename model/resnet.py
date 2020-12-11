@@ -26,7 +26,7 @@ class PreActResNet(nn.Module):
         self.linear = nn.Linear(512 * block.expansion, self.num_cls)
 
         self.noisy_module = nn.ModuleList([
-            NoisyCNNModule(self.architecture, eta),
+            NoisyCNNModule(self.architecture, eta, input=True),
             NoisyCNNModule(self.architecture, eta),
             NoisyCNNModule(self.architecture, eta),
             NoisyCNNModule(self.architecture, eta),
@@ -52,15 +52,21 @@ class PreActResNet(nn.Module):
         x_hat = self.noisy_module[0](x, grad_mask[0], add_adv)
 
         h_ = self.conv1(x_hat)
+        if self.architecture == 'advGNI' and hook:
+            h_.retain_grad()
+            h_.register_hook(self.save_grad('conv1'))
         h = self.noisy_module[1](h_, grad_mask[1], add_adv)
 
         h_ = self.layer1(h)
+        if self.architecture == 'advGNI' and hook:
+            h_.retain_grad()
+            h_.register_hook(self.save_grad('layer1'))
         h = self.noisy_module[2](h_, grad_mask[2], add_adv)
 
         h_ = self.layer2(h)
-        #if self.architecture == 'advGNI' and hook:
-        #    h_.retain_grad()
-        #    h_.register_hook(self.save_grad('layer2'))
+        if self.architecture == 'advGNI' and hook:
+            h_.retain_grad()
+            h_.register_hook(self.save_grad('layer2'))
         h = self.noisy_module[3](h_, grad_mask[3], add_adv)
 
         h = self.layer3(h_)
