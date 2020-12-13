@@ -15,8 +15,7 @@ class PreActResNet(nn.Module):
         self.data_name = config['dataset']['name']
         self.num_cls = config['dataset'][self.data_name]['num_cls']
         self.architecture = config['model']['baseline']
-        self.use_adversarial_noise = True if 'advGNI' in self.architecture else False
-        eta = self.config['model']['ResNet']['eta']
+        eta = self.config['model']['ResNet']['eta'] / 255.
 
         self.in_planes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)

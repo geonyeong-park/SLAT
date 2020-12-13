@@ -37,14 +37,14 @@ class GenByNoise(object):
         network = config['model'][self.data_name]
         if network == 'ResNet':
             self.model = PreActResNet18(config).to(self.device)
+            eta = config['model']['ResNet']['eta']
         else:
             raise ValueError('Not implemented yet')
 
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
-        self.using_adv_noise = self._get_optimizer()
-        print('Using adversarial noise distribution: ', self.using_adv_noise)
+        self._get_optimizer()
 
         self.log_loss = {}
         self.log_loss['train_loss'] = []
@@ -58,7 +58,7 @@ class GenByNoise(object):
         self.tsne = TSNE(n_components=2, perplexity=20, init='pca', n_iter=3000)
 
         # For adversarial robustness test
-        self.epsilon = (8/ 255.) / std_t
+        self.epsilon = (eta/ 255.) / std_t
         self.pgd_alpha = (2 / 255.) / std_t
 
         # For KL-divergence regularization
@@ -78,10 +78,7 @@ class GenByNoise(object):
         self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr'][self.data_name],
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
         self.theta_scheduler = torch.optim.lr_scheduler.CyclicLR(self.opt_theta, base_lr=0, max_lr=opt_param['lr'][self.data_name],
-                                                      step_size_up=lr_steps / 2, step_size_down=lr_steps / 2)
-
-        use_adversarial_noise = self.model.use_adversarial_noise
-        return use_adversarial_noise
+                                                      step_size_up=int(lr_steps*2/5) , step_size_down=int(lr_steps*3/5))
 
     def train(self):
         epochs = self.config['train']['num_epochs']
@@ -89,6 +86,7 @@ class GenByNoise(object):
         n_iter = 0
         training_time = 0
         self.prev_adv_acc = 0.
+        self.ld_init = self.ld
 
         for e in range(epochs):
             start = timer()
@@ -115,7 +113,10 @@ class GenByNoise(object):
                     self.log_loss['training_time'] = training_time
                     pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
 
-        print('Training Finished, elapsed time: {}'.format(training_time))
+
+        print('Training Finished. Checking adversarial robustness...')
+        self._validation(e, n_iter, advattack=True)
+        print('Finished, elapsed time: {}'.format(training_time))
 
     def _train_epoch(self, epoch, n_iter):
         for i, (x, y) in enumerate(self.train_loader):
@@ -124,7 +125,7 @@ class GenByNoise(object):
             if i==0: first_batch = x,y
             x,y = self._preprocess(x,y)
 
-            if self.using_adv_noise:
+            if self.structure == 'advGNI':
                 # -------------------------
                 # 1. Obtain a grad mask
                 # -------------------------
@@ -209,16 +210,30 @@ class GenByNoise(object):
                 loss.backward()
                 self.opt_theta.step()
 
+            elif self.structure == 'FGSM_RS':
+                logit = self.model(x)
+                loss = self.cen(logit, y)
+                loss.backward()
+
+                self.opt_theta.zero_grad()
+                logit = self.model(x, grad_mask=[None], add_adv=True)
+                loss = self.cen(logit, y)
+                loss.backward()
+                self.opt_theta.step()
             else:
                 self.opt_theta.zero_grad()
                 loss = self._step(self.model, x, y)
                 loss.backward()
                 self.opt_theta.step()
 
+            if self.do_KL_reg:
+                self._update_ld(n_iter, self.config['train']['num_epochs'], len(self.train_loader))
+
+
             if n_iter % self.config['exp_setting']['log_every_n_steps'] == 0:
                 self.writer.add_scalar('train/loss', loss, global_step=n_iter)
                 self.log_loss['train_loss'].append(loss.data.cpu().numpy())
-                if self.using_adv_noise and self.do_KL_reg:
+                if self.do_KL_reg:
                     self.log_loss['train_KL'].append(KL.data.cpu().numpy())
 
             n_iter += 1
@@ -234,7 +249,7 @@ class GenByNoise(object):
             torch.save({
                 'model': self.model.state_dict(),
             }, os.path.join(self.snapshot_dir, 'pretrain_'+str(epoch)+'.pth'))
-            raise Warning('Erroneous behavior, epoch={}, acc={}, prev_adv_acc={}'.format(
+            print('Erroneous behavior, epoch={}, acc={}, prev_adv_acc={}'.format(
                 epoch, robust_acc, self.prev_adv_acc))
         elif robust_acc > self.prev_adv_acc:
             torch.save({
@@ -255,6 +270,14 @@ class GenByNoise(object):
     def _mix_loss(self, logit, y):
         y_a, y_b, lam = y[0], y[1], y[2]
         return lam * self.cen(logit, y_a) + (1 - lam) * self.cen(logit, y_b)
+
+    def _update_ld(self, step, epochs, num_batch):
+        num_steps = epochs*num_batch
+        if step > num_steps:
+            p = 1.
+        else:
+            p = float(step) / num_steps
+        self.ld = self.ld_init * (2. / (1. + np.exp(-5. * p)) - 1.)
 
     def _preprocess(self, x, y):
         if self.structure == 'mixup':
@@ -283,11 +306,11 @@ class GenByNoise(object):
                 y = y.long().to(self.device)
 
                 if advattack:
+                    pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, 5, 1)
                     with torch.no_grad():
-                        with torch.enable_grad():
-                            x = self.adversary.perturb(x, y)
-
-                logit = self.model(x)
+                        logit = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
+                else:
+                    logit = self.model(x)
                 loss = self.cen(logit, y)
                 valid_loss += loss.data.cpu().numpy()
 
@@ -307,26 +330,13 @@ class GenByNoise(object):
             self.log_loss['val_acc'].append(valid_acc)
 
         if epoch == None: epoch='Test'
-        print('[{}/{}]: Acc={:.3f}, Loss={:.3f}, LR={:.5f}'.format(epoch, n_iter,
+        print('[{}/{}/PGD attack {}]: Acc={:.3f}, Loss={:.3f}, LR={:.5f}'.format(epoch, n_iter, advattack,
                                                        valid_acc, valid_loss, self.theta_scheduler.get_lr()[0]))
 
     def test(self, checkpoint, mode):
         self.model.load_state_dict(checkpoint['model'])
         self.model.eval()
-        self._PCA_tSNE()
         self.model.to(self.device)
         advattack = True if mode == 'adv_attack' else False
         self._validation(None, None, False, advattack=advattack)
         print('Test finished')
-
-    def _PCA_tSNE(self):
-        image, label = next(iter(self.valid_loader))
-        sample_path = lambda x: os.path.join(self.log_dir, '{}.jpg'.format(x))
-        logit = self.model.cpu()(image.cpu())
-        tsne = self.tsne.fit_transform(logit.data.cpu().numpy())
-        plot_embedding(tsne, label.data.cpu().numpy(), sample_path('tSNE'))
-
-        pca = PCA(n_components=2)
-        pc = pca.fit_transform(logit.data.cpu().numpy())
-        plot_embedding(pc, label.data.cpu().numpy(), sample_path('PCA'))
-        print('Plot tSNE and PCA results')
