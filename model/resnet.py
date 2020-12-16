@@ -15,7 +15,7 @@ class PreActResNet(nn.Module):
         self.data_name = config['dataset']['name']
         self.num_cls = config['dataset'][self.data_name]['num_cls']
         self.architecture = config['model']['baseline']
-        eta = self.config['model']['ResNet']['eta'] / 255.
+        eta = self.config['model']['ResNet']['eta']
 
         self.in_planes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -27,8 +27,13 @@ class PreActResNet(nn.Module):
         self.linear = nn.Linear(512 * block.expansion, self.num_cls)
 
         self.noisy_module = nn.ModuleList([
-            NoisyCNNModule(self.architecture, eta, input=True),
+            NoisyCNNModule(self.architecture, eta/255., input=True),
+            NoisyCNNModule(self.architecture, eta*0.75/255.),
+            NoisyCNNModule(self.architecture, eta*0.75/255.),
+            NoisyCNNModule(self.architecture, eta*0.75/255.),
+            NoisyCNNModule(self.architecture, eta*0.75/255.),
         ])
+        self.noisy_module_name = ['conv1', 'layer1', 'layer2', 'layer3']
 
         self.grads = {}
 
@@ -45,14 +50,37 @@ class PreActResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x, grad_mask=None, add_adv=False, hook=False):
-        if not add_adv: grad_mask = [None]
-        x_hat = self.noisy_module[0](x, grad_mask[0], add_adv)
+    def forward(self, x, grad_mask=None, add_adv=False, hook=False, coeff=None):
+        if not add_adv: grad_mask = [None]*len(self.noisy_module)
+        else:
+            if grad_mask is not None: grad_mask = grad_mask + [None]*(len(self.noisy_module)-len(grad_mask))
+            else: grad_mask = [None]*len(self.noisy_module)
+        x_hat = self.noisy_module[0](x, grad_mask[0], add_adv, coeff)
 
         h = self.conv1(x_hat)
+        if self.architecture == 'advGNI' and hook:
+            h.retain_grad()
+            h.register_hook(self.save_grad(self.noisy_module_name[0]))
+        h = self.noisy_module[1](h, grad_mask[1], add_adv, coeff)
+
         h = self.layer1(h)
+        if self.architecture == 'advGNI' and hook:
+            h.retain_grad()
+            h.register_hook(self.save_grad(self.noisy_module_name[1]))
+        h = self.noisy_module[2](h, grad_mask[2], add_adv, coeff)
+
         h = self.layer2(h)
+        if self.architecture == 'advGNI' and hook:
+            h.retain_grad()
+            h.register_hook(self.save_grad(self.noisy_module_name[2]))
+        h = self.noisy_module[3](h, grad_mask[3], add_adv, coeff)
+
         h = self.layer3(h)
+        if self.architecture == 'advGNI' and hook:
+            h.retain_grad()
+            h.register_hook(self.save_grad(self.noisy_module_name[3]))
+        h = self.noisy_module[4](h, grad_mask[4], add_adv, coeff)
+
         h = self.layer4(h)
 
         h = F.relu(self.bn(h))

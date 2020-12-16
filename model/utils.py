@@ -20,7 +20,7 @@ class NoisyCNNModule(nn.Module):
         self.input = input
         self.eta = eta / std_t if input else eta
 
-    def forward(self, x, grad_mask=None, add_adv=False):
+    def forward(self, x, grad_mask=None, add_adv=False, coeff=None):
         if self.training:
             if self.architecture == 'GNI':
                 x_hat = x + torch.randn_like(x) * sqrt(0.001)
@@ -34,11 +34,17 @@ class NoisyCNNModule(nn.Module):
                         sgn_mask = grad_mask.data.sign()
                         var_mask = torch.abs(grad_mask.data)
 
-                    adv_noise_raw = torch.abs(torch.randn_like(x)) * self.eta
+                    if coeff is None:
+                        adv_noise_raw = torch.abs(0.5*(torch.ones_like(x)+torch.randn_like(x))) * self.eta
+                    else:
+                        mu = 0.5*(1-coeff)
+                        std = 0.5*(1+coeff)
+                        adv_noise_raw = torch.abs(mu*torch.ones_like(x)+std*torch.randn_like(x)) * self.eta
+
                     adv_noise = sgn_mask * adv_noise_raw
-                    #adv_noise.data = clamp(adv_noise, -self.eta, self.eta)
-                    adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
-                    if self.input: adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
+                    if self.input:
+                        adv_noise.data = clamp(adv_noise, -self.eta, self.eta)
+                        adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
                     adv_noise = adv_noise.detach()
 
                     x_hat = x + adv_noise
@@ -63,22 +69,25 @@ class NoisyCNNModule(nn.Module):
                     return x
             elif self.architecture == 'FGSM_RS':
                 """Wong et al., ICLR 2020"""
-                if not add_adv and self.input:
-                    # Initialize delta
-                    self.delta = torch.zeros_like(x)
-                    for j in range(len(self.eta)):
-                        self.delta[:, j, :, :].uniform_(-self.eta[j][0][0].item(), self.eta[j][0][0].item())
-                        self.delta.data = clamp(self.delta, lower_limit - x, upper_limit - x)
-                    self.delta.requires_grad = True
-                    x_hat = x + self.delta[:x.size(0)]
-                    return x_hat
+                if self.input:
+                    if not add_adv:
+                        # Initialize delta
+                        self.delta = torch.zeros_like(x)
+                        for j in range(len(self.eta)):
+                            self.delta[:, j, :, :].uniform_(-self.eta[j][0][0].item(), self.eta[j][0][0].item())
+                            self.delta.data = clamp(self.delta, lower_limit - x, upper_limit - x)
+                        self.delta.requires_grad = True
+                        x_hat = x + self.delta[:x.size(0)]
+                        return x_hat
+                    else:
+                        grad = self.delta.grad.detach()
+                        self.delta.data = clamp(self.delta + 1.5*self.eta*torch.sign(grad), -self.eta, self.eta)
+                        self.delta.data[:x.size(0)] = clamp(self.delta[:x.size(0)], lower_limit - x, upper_limit - x)
+                        self.delta = self.delta.detach()
+                        x_hat = x + self.delta[:x.size(0)]
+                        return x_hat
                 else:
-                    grad = self.delta.grad.detach()
-                    self.delta.data = clamp(self.delta + 1.5*self.eta*torch.sign(grad), -self.eta, self.eta)
-                    self.delta.data[:x.size(0)] = clamp(self.delta[:x.size(0)], lower_limit - x, upper_limit - x)
-                    self.delta = self.delta.detach()
-                    x_hat = x + self.delta[:x.size(0)]
-                    return x_hat
+                    return x
             else:
                 # PGD will be included in noise.py
                 return x

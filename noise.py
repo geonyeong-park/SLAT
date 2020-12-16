@@ -38,21 +38,22 @@ class GenByNoise(object):
         if network == 'ResNet':
             self.model = PreActResNet18(config).to(self.device)
             eta = config['model']['ResNet']['eta']
+            self.noisy_module_name = self.model.noisy_module_name
         else:
             raise ValueError('Not implemented yet')
 
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
+        epochs = self.config['train']['num_epochs']
+        self.total_steps = epochs * len(self.train_loader)
         self._get_optimizer()
 
         self.log_loss = {}
         self.log_loss['train_loss'] = []
-        self.log_loss['train_KL'] = []
         self.log_loss['val_acc'] = []
         self.log_loss['val_loss'] = []
         self.log_loss['training_time'] = 0.
-        self.ld = config['train']['ld'][self.data_name]
         self.val_epoch = 1
 
         self.tsne = TSNE(n_components=2, perplexity=20, init='pca', n_iter=3000)
@@ -61,9 +62,6 @@ class GenByNoise(object):
         self.epsilon = (eta/ 255.) / std_t
         self.pgd_alpha = (2 / 255.) / std_t
 
-        # For KL-divergence regularization
-        self.do_KL_reg = self.config['model']['ResNet']['KL']
-
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print("Running on:", device)
@@ -71,14 +69,11 @@ class GenByNoise(object):
 
     def _get_optimizer(self):
         opt_param = self.config['optimizer']
-        epochs = self.config['train']['num_epochs']
-
-        lr_steps = epochs * len(self.train_loader)
 
         self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr'][self.data_name],
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
         self.theta_scheduler = torch.optim.lr_scheduler.CyclicLR(self.opt_theta, base_lr=0, max_lr=opt_param['lr'][self.data_name],
-                                                      step_size_up=int(lr_steps*2/5) , step_size_down=int(lr_steps*3/5))
+                                                      step_size_up=int(self.total_steps*2/5) , step_size_down=int(self.total_steps*3/5))
 
     def train(self):
         epochs = self.config['train']['num_epochs']
@@ -86,7 +81,6 @@ class GenByNoise(object):
         n_iter = 0
         training_time = 0
         self.prev_adv_acc = 0.
-        self.ld_init = self.ld
 
         for e in range(epochs):
             start = timer()
@@ -131,12 +125,12 @@ class GenByNoise(object):
                 # -------------------------
                 grad_mask = []
                 x.requires_grad = True
-                logit_clean = self.model(x)
+                logit_clean = self.model(x, hook=True)
                 loss = self.cen(logit_clean, y)
 
-                retain = True if self.do_KL_reg else False
-                loss.backward(retain_graph=retain)
+                loss.backward()
                 grad_mask.append(x.grad.data)
+                for d in self.noisy_module_name: grad_mask.append(self.model.grads[d])
 
                 # -------------------------
                 # 2. Generate adversarial example
@@ -144,20 +138,13 @@ class GenByNoise(object):
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
 
-                logit_adv = self.model(x, grad_mask, add_adv=True)
+                mu_std_controller = (2. / (1. + np.exp(-5. * n_iter/self.total_steps)) - 1.)
+                logit_adv = self.model(x, grad_mask, add_adv=True, coeff=mu_std_controller)
 
                 # Main loss with adversarial example
                 adv_loss = self.cen(logit_adv, y)
 
-                if self.do_KL_reg:
-                    # Regularize KL-divergence for approximated second-order penalty
-                    yhat_clean = nn.Softmax(dim=1)(logit_clean)
-                    yhat_noise = nn.Softmax(dim=1)(logit_adv)
-                    KL = nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
-                    loss = adv_loss + self.ld * KL
-                    if i % 100 == 0: print('adv_loss: {}, KL: {}'.format(adv_loss, KL))
-                else:
-                    loss = adv_loss
+                loss = adv_loss
                 loss.backward()
                 self.opt_theta.step()
 
@@ -168,9 +155,8 @@ class GenByNoise(object):
                 yhat_clean = nn.Softmax(dim=1)(logit_clean)
                 loss = self.cen(logit_clean, y)
 
-                retain = True if self.do_KL_reg else False
                 self.model.zero_grad()
-                loss.backward(retain_graph=retain)
+                loss.backward()
                 grad_mask.append(x.grad.data)
 
                 self.opt_theta.zero_grad()
@@ -179,13 +165,7 @@ class GenByNoise(object):
                 logit_adv = self.model(x, grad_mask, add_adv=True)
                 adv_loss = self.cen(logit_adv, y)
 
-                if self.do_KL_reg:
-                    yhat_noise = nn.Softmax(dim=1)(logit_adv)
-                    yhat_clean = nn.Softmax(dim=1)(logit_clean)
-                    KL = nn.KLDivLoss(reduction='batchmean')(yhat_clean.log(), yhat_noise)
-                    loss = adv_loss + self.ld * KL
-                else:
-                    loss = adv_loss
+                loss = adv_loss
                 loss.backward()
                 self.opt_theta.step()
 
@@ -216,7 +196,7 @@ class GenByNoise(object):
                 loss.backward()
 
                 self.opt_theta.zero_grad()
-                logit = self.model(x, grad_mask=[None], add_adv=True)
+                logit = self.model(x, add_adv=True)
                 loss = self.cen(logit, y)
                 loss.backward()
                 self.opt_theta.step()
@@ -226,15 +206,9 @@ class GenByNoise(object):
                 loss.backward()
                 self.opt_theta.step()
 
-            if self.do_KL_reg:
-                self._update_ld(n_iter, self.config['train']['num_epochs'], len(self.train_loader))
-
-
             if n_iter % self.config['exp_setting']['log_every_n_steps'] == 0:
                 self.writer.add_scalar('train/loss', loss, global_step=n_iter)
                 self.log_loss['train_loss'].append(loss.data.cpu().numpy())
-                if self.do_KL_reg:
-                    self.log_loss['train_KL'].append(KL.data.cpu().numpy())
 
             n_iter += 1
             self.theta_scheduler.step()
@@ -271,14 +245,6 @@ class GenByNoise(object):
         y_a, y_b, lam = y[0], y[1], y[2]
         return lam * self.cen(logit, y_a) + (1 - lam) * self.cen(logit, y_b)
 
-    def _update_ld(self, step, epochs, num_batch):
-        num_steps = epochs*num_batch
-        if step > num_steps:
-            p = 1.
-        else:
-            p = float(step) / num_steps
-        self.ld = self.ld_init * (2. / (1. + np.exp(-5. * p)) - 1.)
-
     def _preprocess(self, x, y):
         if self.structure == 'mixup':
             alpha = self.config['model']['mixup']['alpha']
@@ -293,7 +259,7 @@ class GenByNoise(object):
         else:
             return x, y
 
-    def _validation(self, epoch, n_iter, record=True, advattack=False):
+    def _validation(self, epoch, n_iter, record=True, advattack=False, attack_iters=5, restarts=1):
         with torch.no_grad():
             self.model.eval()
 
@@ -306,7 +272,8 @@ class GenByNoise(object):
                 y = y.long().to(self.device)
 
                 if advattack:
-                    pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, 5, 1)
+                    with torch.enable_grad():
+                        pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, attack_iters, restarts)
                     with torch.no_grad():
                         logit = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
                 else:
@@ -316,6 +283,7 @@ class GenByNoise(object):
 
                 pred = logit.data.max(1)[1]
                 valid_acc += pred.eq(y.data).cpu().sum()
+                print(valid_acc)
 
                 k = y.data.size()[0]
                 counter += k
@@ -330,7 +298,7 @@ class GenByNoise(object):
             self.log_loss['val_acc'].append(valid_acc)
 
         if epoch == None: epoch='Test'
-        print('[{}/{}/PGD attack {}]: Acc={:.3f}, Loss={:.3f}, LR={:.5f}'.format(epoch, n_iter, advattack,
+        print('[{}/{}/PGD attack {}]: Acc={:.5f}, Loss={:.3f}, LR={:.5f}'.format(epoch, n_iter, advattack,
                                                        valid_acc, valid_loss, self.theta_scheduler.get_lr()[0]))
 
     def test(self, checkpoint, mode):
@@ -338,5 +306,5 @@ class GenByNoise(object):
         self.model.eval()
         self.model.to(self.device)
         advattack = True if mode == 'adv_attack' else False
-        self._validation(None, None, False, advattack=advattack)
+        self._validation(None, None, False, advattack=advattack, attack_iters=50, restarts=10)
         print('Test finished')

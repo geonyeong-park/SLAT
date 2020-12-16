@@ -42,7 +42,6 @@ model:
 
   ResNet:
     eta: 8 # eta/255. will be used following convention
-    KL: False
   cutout:
     length: 16
   mixup:
@@ -52,10 +51,6 @@ model:
 
 train:
   num_epochs: 30
-  ld:
-    MNIST: 0.
-    SVHN: 0.
-    CIFAR10: 0.1
 optimizer:
   momentum: 0.9
   lr:

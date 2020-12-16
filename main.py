@@ -33,11 +33,8 @@ def get_arguments():
                         required=False, help="")
     parser.add_argument("--resume_mode", type=str, default='adv_attack',
                         required=False, help="normal or adv_attack")
-    parser.add_argument("--ld", type=float, default=None,
-                        required=False, help="KL penalty")
     parser.add_argument("--eta", type=float, default=None,
                         required=False, help="Variance")
-    parser.add_argument("--no_KL", default=False, action='store_true', required=False, help="")
     parser.add_argument("--PGD_iters", default=None, type=int, required=False, help="")
     parser.add_argument("--mixup_alpha", type=float, default=None,
                         required=False, help="")
@@ -99,15 +96,9 @@ def main(config, args):
         assert mode == 'adv_attack' or mode == 'normal'
         print('load {}'.format(args.resume))
         print('resume mode: {}'.format(mode))
-    if args.ld is not None:
-        print('KL Lambda: ', args.ld)
-        config['train']['ld'][config['dataset']['name']] = args.ld
     if args.eta is not None:
         print('Eta: ', args.eta)
         config['model']['ResNet']['eta'] = args.eta
-    if args.no_KL:
-        print('KL: False')
-        config['model']['ResNet']['KL'] = not args.no_KL
     if args.PGD_iters is not None:
         print('PGD iters: {}'.format(args.PGD_iters))
         config['model']['PGD']['iters'] = args.PGD_iters
