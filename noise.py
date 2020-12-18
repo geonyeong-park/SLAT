@@ -60,7 +60,7 @@ class GenByNoise(object):
 
         # For adversarial robustness test
         self.epsilon = (eta/ 255.) / std_t
-        self.pgd_alpha = (2 / 255.) / std_t
+        self.pgd_alpha = (eta*0.25 / 255.) / std_t
 
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -142,9 +142,7 @@ class GenByNoise(object):
                 logit_adv = self.model(x, grad_mask, add_adv=True, coeff=mu_std_controller)
 
                 # Main loss with adversarial example
-                adv_loss = self.cen(logit_adv, y)
-
-                loss = adv_loss
+                loss = self.cen(logit_adv, y)
                 loss.backward()
                 self.opt_theta.step()
 
@@ -163,9 +161,7 @@ class GenByNoise(object):
                 self.model.zero_grad()
 
                 logit_adv = self.model(x, grad_mask, add_adv=True)
-                adv_loss = self.cen(logit_adv, y)
-
-                loss = adv_loss
+                loss = self.cen(logit_adv, y)
                 loss.backward()
                 self.opt_theta.step()
 
@@ -200,6 +196,23 @@ class GenByNoise(object):
                 loss = self.cen(logit, y)
                 loss.backward()
                 self.opt_theta.step()
+
+                """
+                # Gradient alignment
+                delta = torch.zeros(x.shape).cuda()
+                for j in range(len(self.epsilon)):
+                    delta[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
+                delta.requires_grad = True
+
+                delta_output = self.model(x + delta)
+                delta_loss = self.cen(delta_output, y)
+
+                adv_grad = torch.autograd.grad(delta_loss, x, create_graph=True)[0]
+                clean_grad = grad_mask[0]
+                clean_grad, adv_grad = clean_grad.reshape(len(clean_grad), -1), adv_grad.reshape(len(adv_grad), -1)
+                cos = torch.nn.functional.cosine_similarity(clean_grad, adv_grad, 1)
+                cos_loss = 0.2*(1. - cos.mean())
+                """
             else:
                 self.opt_theta.zero_grad()
                 loss = self._step(self.model, x, y)
@@ -283,7 +296,6 @@ class GenByNoise(object):
 
                 pred = logit.data.max(1)[1]
                 valid_acc += pred.eq(y.data).cpu().sum()
-                print(valid_acc)
 
                 k = y.data.size()[0]
                 counter += k

@@ -28,10 +28,10 @@ class PreActResNet(nn.Module):
 
         self.noisy_module = nn.ModuleList([
             NoisyCNNModule(self.architecture, eta/255., input=True),
-            NoisyCNNModule(self.architecture, eta*0.75/255.),
-            NoisyCNNModule(self.architecture, eta*0.75/255.),
-            NoisyCNNModule(self.architecture, eta*0.75/255.),
-            NoisyCNNModule(self.architecture, eta*0.75/255.),
+            NoisyCNNModule(self.architecture, 0.75*eta/255.),
+            NoisyCNNModule(self.architecture, 0.75*eta/255.),
+            NoisyCNNModule(self.architecture, 0.75*eta/255.),
+            NoisyCNNModule(self.architecture, 0.75*eta/255.),
         ])
         self.noisy_module_name = ['conv1', 'layer1', 'layer2', 'layer3']
 

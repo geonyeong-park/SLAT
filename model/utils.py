@@ -18,7 +18,7 @@ class NoisyCNNModule(nn.Module):
         super(NoisyCNNModule, self).__init__()
         self.architecture = architecture
         self.input = input
-        self.eta = eta / std_t if input else eta
+        self.eta = eta / std_t if input else torch.tensor(eta).to('cuda')
 
     def forward(self, x, grad_mask=None, add_adv=False, coeff=None):
         if self.training:
@@ -28,22 +28,21 @@ class NoisyCNNModule(nn.Module):
             elif self.architecture == 'advGNI':
                 if add_adv:
                     assert grad_mask is not None
+                    assert coeff is not None
                     grad_mask = grad_mask.detach()
 
                     with torch.no_grad():
                         sgn_mask = grad_mask.data.sign()
                         var_mask = torch.abs(grad_mask.data)
 
-                    if coeff is None:
-                        adv_noise_raw = torch.abs(0.5*(torch.ones_like(x)+torch.randn_like(x))) * self.eta
-                    else:
-                        mu = 0.5*(1-coeff)
-                        std = 0.5*(1+coeff)
-                        adv_noise_raw = torch.abs(mu*torch.ones_like(x)+std*torch.randn_like(x)) * self.eta
+                    #adv_noise_raw = torch.abs(0.5*(torch.ones_like(x)+torch.randn_like(x))) * self.eta
+                    mu = 0.5*(1-coeff)
+                    std = 0.5*(1+coeff)
+                    adv_noise_raw = torch.abs(mu*torch.ones_like(x)+std*torch.randn_like(x)) * self.eta
 
                     adv_noise = sgn_mask * adv_noise_raw
+                    adv_noise.data = clamp(adv_noise, -self.eta, self.eta)
                     if self.input:
-                        adv_noise.data = clamp(adv_noise, -self.eta, self.eta)
                         adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
                     adv_noise = adv_noise.detach()
 
@@ -81,7 +80,7 @@ class NoisyCNNModule(nn.Module):
                         return x_hat
                     else:
                         grad = self.delta.grad.detach()
-                        self.delta.data = clamp(self.delta + 1.5*self.eta*torch.sign(grad), -self.eta, self.eta)
+                        self.delta.data = clamp(self.delta + 1.25*self.eta*torch.sign(grad), -self.eta, self.eta)
                         self.delta.data[:x.size(0)] = clamp(self.delta[:x.size(0)], lower_limit - x, upper_limit - x)
                         self.delta = self.delta.detach()
                         x_hat = x + self.delta[:x.size(0)]
