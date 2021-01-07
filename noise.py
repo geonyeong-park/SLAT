@@ -38,7 +38,6 @@ class GenByNoise(object):
         if network == 'ResNet':
             self.model = PreActResNet18(config).to(self.device)
             eta = config['model']['ResNet']['eta']
-            self.noisy_module_name = self.model.noisy_module_name
         else:
             raise ValueError('Not implemented yet')
 
@@ -70,10 +69,13 @@ class GenByNoise(object):
     def _get_optimizer(self):
         opt_param = self.config['optimizer']
 
-        self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr'][self.data_name],
+        self.opt_theta = torch.optim.SGD(self.model.optim_theta(), opt_param['lr'][self.data_name],
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
-        self.theta_scheduler = torch.optim.lr_scheduler.CyclicLR(self.opt_theta, base_lr=0, max_lr=opt_param['lr'][self.data_name],
-                                                      step_size_up=int(self.total_steps*2/5) , step_size_down=int(self.total_steps*3/5))
+        self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
+        if self.structure == 'advGNI':
+            self.opt_phi = torch.optim.SGD(self.model.optim_phi(), opt_param['lr'][self.data_name],
+                                            weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
+            self.phi_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_phi, [60,120,160], 0.1)
 
     def train(self):
         epochs = self.config['train']['num_epochs']
@@ -118,36 +120,53 @@ class GenByNoise(object):
             y = y.long().to(self.device)
             if i==0: first_batch = x,y
             x,y = self._preprocess(x,y)
+            self.opt_theta.zero_grad()
+            self.model.zero_grad()
 
             if self.structure == 'advGNI':
                 # -------------------------
                 # 1. Obtain a grad mask
                 # -------------------------
-                grad_mask = []
+                self.opt_phi.zero_grad()
+
                 x.requires_grad = True
                 logit_clean = self.model(x, hook=True)
                 loss = self.cen(logit_clean, y)
 
                 loss.backward()
-                grad_mask.append(x.grad.data)
-                for d in self.noisy_module_name: grad_mask.append(self.model.grads[d])
+                self.model.grads['input'] = x.grad.data
 
                 # -------------------------
-                # 2. Generate adversarial example
+                # 2. Train theta
                 # -------------------------
                 self.opt_theta.zero_grad()
+                self.opt_phi.zero_grad()
                 self.model.zero_grad()
 
-                mu_std_controller = (2. / (1. + np.exp(-5. * n_iter/self.total_steps)) - 1.)
-                logit_adv = self.model(x, grad_mask, add_adv=True, coeff=mu_std_controller)
+                logit_adv = self.model(x, add_adv=True, detach_noise=True)
 
                 # Main loss with adversarial example
-                loss = self.cen(logit_adv, y)
-                loss.backward()
+                theta_loss = self.cen(logit_adv, y)
+                theta_loss.backward()
                 self.opt_theta.step()
 
+                # -------------------------
+                # 3. Train phi
+                # -------------------------
+                self.opt_theta.zero_grad()
+                self.opt_phi.zero_grad()
+                self.model.zero_grad()
+
+                logit_adv = self.model(x, add_adv=True, detach_noise=False)
+
+                # phi loss for adversarial noise distribution
+                phi_loss = - self.cen(logit_adv, y)
+                phi_loss.backward()
+                self.opt_phi.step()
+
+                if n_iter % 1000 == 0: print('phi_loss: ', phi_loss)
+
             elif self.structure == 'FGSM':
-                grad_mask = []
                 x.requires_grad = True
                 logit_clean = self.model(x)
                 yhat_clean = nn.Softmax(dim=1)(logit_clean)
@@ -155,12 +174,12 @@ class GenByNoise(object):
 
                 self.model.zero_grad()
                 loss.backward()
-                grad_mask.append(x.grad.data)
+                self.model.grads['input'] = x.grad.data
 
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
 
-                logit_adv = self.model(x, grad_mask, add_adv=True)
+                logit_adv = self.model(x, add_adv=True)
                 loss = self.cen(logit_adv, y)
                 loss.backward()
                 self.opt_theta.step()
@@ -219,15 +238,15 @@ class GenByNoise(object):
                 loss.backward()
                 self.opt_theta.step()
 
-            if n_iter % self.config['exp_setting']['log_every_n_steps'] == 0:
-                self.writer.add_scalar('train/loss', loss, global_step=n_iter)
-                self.log_loss['train_loss'].append(loss.data.cpu().numpy())
-
             n_iter += 1
-            self.theta_scheduler.step()
+
+        self.theta_scheduler.step()
+        if self.structure == 'advGNI':
+            self.phi_scheduler.step()
 
         x,y = first_batch
 
+        self.model.eval()
         pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, 5, 1)
         with torch.no_grad():
             output = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
@@ -245,6 +264,7 @@ class GenByNoise(object):
 
         print('[{} epoch, adv_test] acc={}'.format(epoch, robust_acc))
         self.prev_adv_acc = robust_acc
+        self.model.train()
         return n_iter
 
     def _step(self, model, x, y):

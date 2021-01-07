@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 from torchvision import models
-from model.utils import NoisyCNNModule, mean, std
+from model.utils import NoisyCNNModule, PreActBlock, mean, std
 import torch.nn.functional as F
 
 # PreActResNet Code is largely based on:
@@ -14,8 +14,9 @@ class PreActResNet(nn.Module):
         self.config = config
         self.data_name = config['dataset']['name']
         self.num_cls = config['dataset'][self.data_name]['num_cls']
+        self.input_size = config['dataset'][self.data_name]['input_size']
         self.architecture = config['model']['baseline']
-        eta = self.config['model']['ResNet']['eta']
+        self.eta = self.config['model']['ResNet']['eta']
 
         self.in_planes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -26,16 +27,23 @@ class PreActResNet(nn.Module):
         self.bn = nn.BatchNorm2d(512 * block.expansion)
         self.linear = nn.Linear(512 * block.expansion, self.num_cls)
 
-        self.noisy_module = nn.ModuleList([
-            NoisyCNNModule(self.architecture, eta/255., input=True),
-            NoisyCNNModule(self.architecture, 0.75*eta/255.),
-            NoisyCNNModule(self.architecture, 0.75*eta/255.),
-            NoisyCNNModule(self.architecture, 0.75*eta/255.),
-            NoisyCNNModule(self.architecture, 0.75*eta/255.),
-        ])
-        self.noisy_module_name = ['conv1', 'layer1', 'layer2', 'layer3']
+        self.noisy_module = nn.ModuleDict({
+            'input': NoisyCNNModule(self.architecture, self.eta/255., True, 3, size=self.input_size),
+            'conv1': NoisyCNNModule(self.architecture, self.eta/255., indim=64, size=self.input_size),
+            'layer1': NoisyCNNModule(self.architecture, self.eta/255., indim=64, size=self.input_size),
+            'layer2': NoisyCNNModule(self.architecture, self.eta/255., indim=128, size=self.input_size//2),
+            'layer3': NoisyCNNModule(self.architecture, self.eta/255., indim=256, size=self.input_size//4),
+            'layer4': NoisyCNNModule(self.architecture, self.eta/255., indim=512, size=self.input_size//8),
+        })
 
-        self.grads = {}
+        self.grads = {
+            'input': None,
+            'conv1': None,
+            'layer1': None,
+            'layer2': None,
+            'layer3': None,
+            'layer4': None,
+        }
 
     def save_grad(self, name):
         def hook(grad):
@@ -50,38 +58,33 @@ class PreActResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x, grad_mask=None, add_adv=False, hook=False, coeff=None):
-        if not add_adv: grad_mask = [None]*len(self.noisy_module)
-        else:
-            if grad_mask is not None: grad_mask = grad_mask + [None]*(len(self.noisy_module)-len(grad_mask))
-            else: grad_mask = [None]*len(self.noisy_module)
-        x_hat = self.noisy_module[0](x, grad_mask[0], add_adv, coeff)
+    def forward(self, x, add_adv=False, hook=False, detach_noise=False):
+        x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv, detach_noise)
 
         h = self.conv1(x_hat)
-        if self.architecture == 'advGNI' and hook:
-            h.retain_grad()
-            h.register_hook(self.save_grad(self.noisy_module_name[0]))
-        h = self.noisy_module[1](h, grad_mask[1], add_adv, coeff)
+        if hook:
+            h.register_hook(self.save_grad('conv1'))
+        h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv, detach_noise)
 
         h = self.layer1(h)
-        if self.architecture == 'advGNI' and hook:
-            h.retain_grad()
-            h.register_hook(self.save_grad(self.noisy_module_name[1]))
-        h = self.noisy_module[2](h, grad_mask[2], add_adv, coeff)
+        if hook:
+            h.register_hook(self.save_grad('layer1'))
+        h = self.noisy_module['layer1'](h, self.grads['layer1'], add_adv, detach_noise)
 
         h = self.layer2(h)
-        if self.architecture == 'advGNI' and hook:
-            h.retain_grad()
-            h.register_hook(self.save_grad(self.noisy_module_name[2]))
-        h = self.noisy_module[3](h, grad_mask[3], add_adv, coeff)
+        if hook:
+            h.register_hook(self.save_grad('layer2'))
+        h = self.noisy_module['layer2'](h, self.grads['layer2'], add_adv, detach_noise)
 
         h = self.layer3(h)
-        if self.architecture == 'advGNI' and hook:
-            h.retain_grad()
-            h.register_hook(self.save_grad(self.noisy_module_name[3]))
-        h = self.noisy_module[4](h, grad_mask[4], add_adv, coeff)
+        if hook:
+            h.register_hook(self.save_grad('layer3'))
+        h = self.noisy_module['layer3'](h, self.grads['layer3'], add_adv, detach_noise)
 
         h = self.layer4(h)
+        if hook:
+            h.register_hook(self.save_grad('layer4'))
+        h = self.noisy_module['layer4'](h, self.grads['layer4'], add_adv, detach_noise)
 
         h = F.relu(self.bn(h))
         h = F.avg_pool2d(h, 4)
@@ -89,60 +92,42 @@ class PreActResNet(nn.Module):
         h = self.linear(h)
         return h
 
+    def _yield_theta(self):
+        b = []
+        b.append(self.conv1)
+        b.append(self.layer1)
+        b.append(self.layer2)
+        b.append(self.layer3)
+        b.append(self.layer4)
+        b.append(self.bn)
+        b.append(self.linear)
 
-class PreActBlock(nn.Module):
-    '''Pre-activation version of the BasicBlock.'''
-    expansion = 1
+        for i in range(len(b)):
+            for j in b[i].modules():
+                for k in j.parameters():
+                    if k.requires_grad:
+                        yield k
 
-    def __init__(self, in_planes, planes, stride=1):
-        super(PreActBlock, self).__init__()
-        self.bn1 = nn.BatchNorm2d(in_planes)
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+    def _yield_phi(self):
+        b = []
+        b.append(self.noisy_module)
 
-        if stride != 1 or in_planes != self.expansion*planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False)
-            )
+        for i in range(len(b)):
+            for j in b[i].modules():
+                jj = 0
+                for k in j.parameters():
+                    jj += 1
+                    if k.requires_grad:
+                        yield k
 
-    def forward(self, x):
-        out = F.relu(self.bn1(x))
-        shortcut = self.shortcut(x) if hasattr(self, 'shortcut') else x
-        out = self.conv1(out)
-        out = self.conv2(F.relu(self.bn2(out)))
-        out += shortcut
-        return out
+    def optim_theta(self):
+        return [{'params': self._yield_theta()}]
 
-
-class PreActBottleneck(nn.Module):
-    '''Pre-activation version of the original Bottleneck module.'''
-    expansion = 4
-
-    def __init__(self, in_planes, planes, stride=1):
-        super(PreActBottleneck, self).__init__()
-        self.bn1 = nn.BatchNorm2d(in_planes)
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, self.expansion*planes, kernel_size=1, bias=False)
-
-        if stride != 1 or in_planes != self.expansion*planes:
-            self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False)
-            )
-
-    def forward(self, x):
-        out = F.relu(self.bn1(x))
-        shortcut = self.shortcut(out) if hasattr(self, 'shortcut') else x
-        out = self.conv1(out)
-        out = self.conv2(F.relu(self.bn2(out)))
-        out = self.conv3(F.relu(self.bn3(out)))
-        out += shortcut
-        return out
+    def optim_phi(self):
+        return [{'params': self._yield_phi()}]
 
 
 def PreActResNet18(config):
-    return PreActResNet(PreActBlock, [2,2,2,2], config)
+    model = PreActResNet(PreActBlock, [2,2,2,2], config)
+    return model
 

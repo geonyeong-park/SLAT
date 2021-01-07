@@ -50,12 +50,12 @@ model:
     iters: 10
 
 train:
-  num_epochs: 30
+  num_epochs: 200
 optimizer:
   momentum: 0.9
   lr:
-    MNIST: 0.2
-    SVHN: 0.2
-    CIFAR10: 0.2
+    MNIST: 0.01
+    SVHN: 0.01
+    CIFAR10: 0.01
   weight_decay: 0.0005
   lr_decay: 0.99

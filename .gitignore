@@ -6,3 +6,4 @@ __pycache__/
 solver.py
 *.png
 *.sh
+test.py
