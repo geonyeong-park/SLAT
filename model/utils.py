@@ -41,7 +41,8 @@ class PhiNet(nn.Module):
 
         self.conv_list = nn.ModuleList(conv_list)
         self.bn_list = nn.ModuleList(bn_list)
-        self.fc = nn.Linear(out_channel, 1)
+        self.fc_mu = nn.Linear(out_channel, 1)
+        self.fc_std = nn.Linear(out_channel, 1)
 
     def forward(self, x):
         h = x
@@ -49,9 +50,12 @@ class PhiNet(nn.Module):
             h = conv(h)
             h = bn(h)
             h = self.fn(h)
-        h = self.fc(h.view(-1, self.config[-1]))
-        out = nn.Sigmoid()(h)
-        return out
+        mu_ = self.fc_mu(h.view(-1, self.config[-1]))
+        std_ = self.fc_std(h.view(-1, self.config[-1]))
+
+        mu = nn.Sigmoid()(mu_)
+        std = nn.Sigmoid()(std_)
+        return mu, std
 
 
 class NoisyCNNModule(nn.Module):
@@ -79,15 +83,19 @@ class NoisyCNNModule(nn.Module):
                     with torch.no_grad():
                         sgn_mask = grad_mask.data.sign()
 
-                    mu = self.phi(x)
+                    mu, std = self.phi(x)
 
                     if random.random() > 0.999:
-                        print('[{}/{}] min: {}, max: {}, mean: {}\t'.format(self.indim, self.size,
+                        print('[{}/{}] mu_min: {}, mu_max: {}, mu_mean: {}\t'.format(self.indim, self.size,
                                                                             torch.min(mu),torch.max(mu),torch.mean(mu)))
+                        print('[{}/{}] std_min: {}, std_max: {}, std_mean: {}\t'.format(self.indim, self.size,
+                                                                            torch.min(std),torch.max(std),torch.mean(std)))
 
-                    mu = mu.view(mu.shape[0],1,1,1)
+                    mu, std = mu.view(mu.shape[0],1,1,1), std.view(std.shape[0],1,1,1)
                     mu = mu.repeat(1,x.shape[1],x.shape[2],x.shape[3])
-                    adv_noise_raw = torch.abs(mu + 0.2*torch.randn_like(x)) * self.eta
+                    std = std.repeat(1,x.shape[1],x.shape[2],x.shape[3])
+                    adv_noise_raw = torch.abs(mu + std*torch.randn_like(x)) * self.eta
+                    #adv_noise_raw = torch.abs(mu + 0.2*torch.randn_like(x)) * self.eta
 
                     adv_noise = sgn_mask * adv_noise_raw
                     adv_noise.data = clamp(adv_noise, -self.eta, self.eta)
