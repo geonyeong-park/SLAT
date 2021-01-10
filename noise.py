@@ -119,7 +119,6 @@ class GenByNoise(object):
             x = x.to(self.device)
             y = y.long().to(self.device)
             if i==0: first_batch = x,y
-            x,y = self._preprocess(x,y)
             self.opt_theta.zero_grad()
             self.model.zero_grad()
 
@@ -166,7 +165,7 @@ class GenByNoise(object):
 
                 if n_iter % 1000 == 0: print('phi_loss: ', phi_loss)
 
-            elif self.structure == 'FGSM':
+            elif self.structure == 'FGSM' or self.structure == 'FGSM_gradalign':
                 x.requires_grad = True
                 logit_clean = self.model(x)
                 yhat_clean = nn.Softmax(dim=1)(logit_clean)
@@ -174,13 +173,33 @@ class GenByNoise(object):
 
                 self.model.zero_grad()
                 loss.backward()
-                self.model.grads['input'] = x.grad.data
+                grad = x.grad.data
+                self.model.grads['input'] = grad
 
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
 
                 logit_adv = self.model(x, add_adv=True)
                 loss = self.cen(logit_adv, y)
+
+                reg = torch.zeros(1).cuda()[0]
+                if self.structure == 'FGSM_gradalign':
+                    # Gradient alignment
+                    delta = torch.zeros(x.shape).cuda()
+                    for j in range(len(self.epsilon)):
+                        delta[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
+                    delta.requires_grad = True
+
+                    delta_output = self.model(x + delta)
+                    delta_loss = self.cen(delta_output, y)
+
+                    adv_grad = torch.autograd.grad(delta_loss, delta, create_graph=True)[0]
+                    grad, adv_grad = grad.reshape(len(grad), -1), adv_grad.reshape(len(adv_grad), -1)
+                    cos = torch.nn.functional.cosine_similarity(grad, adv_grad, 1)
+                    print(cos)
+                    reg = 0.2*(1. - cos.mean())
+
+                loss += reg
                 loss.backward()
                 self.opt_theta.step()
 
@@ -216,22 +235,6 @@ class GenByNoise(object):
                 loss.backward()
                 self.opt_theta.step()
 
-                """
-                # Gradient alignment
-                delta = torch.zeros(x.shape).cuda()
-                for j in range(len(self.epsilon)):
-                    delta[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
-                delta.requires_grad = True
-
-                delta_output = self.model(x + delta)
-                delta_loss = self.cen(delta_output, y)
-
-                adv_grad = torch.autograd.grad(delta_loss, x, create_graph=True)[0]
-                clean_grad = grad_mask[0]
-                clean_grad, adv_grad = clean_grad.reshape(len(clean_grad), -1), adv_grad.reshape(len(adv_grad), -1)
-                cos = torch.nn.functional.cosine_similarity(clean_grad, adv_grad, 1)
-                cos_loss = 0.2*(1. - cos.mean())
-                """
             else:
                 self.opt_theta.zero_grad()
                 loss = self._step(self.model, x, y)
@@ -270,27 +273,8 @@ class GenByNoise(object):
     def _step(self, model, x, y):
         model.train()
         logit = model(x)
-
-        loss = self._mix_loss(logit,y) if self.structure=='mixup' else self.cen(logit, y)
+        loss = self.cen(logit, y)
         return loss
-
-    def _mix_loss(self, logit, y):
-        y_a, y_b, lam = y[0], y[1], y[2]
-        return lam * self.cen(logit, y_a) + (1 - lam) * self.cen(logit, y_b)
-
-    def _preprocess(self, x, y):
-        if self.structure == 'mixup':
-            alpha = self.config['model']['mixup']['alpha']
-            lam = np.random.beta(alpha, alpha)
-
-            batch_size = x.size()[0]
-            index = torch.randperm(batch_size).to('cuda')
-
-            mixed_x = lam * x + (1 - lam) * x[index, :]
-            y_a, y_b = y, y[index]
-            return mixed_x, (y_a, y_b, lam)
-        else:
-            return x, y
 
     def _validation(self, epoch, n_iter, record=True, advattack=False, attack_iters=5, restarts=1):
         with torch.no_grad():

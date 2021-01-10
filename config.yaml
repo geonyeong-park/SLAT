@@ -35,17 +35,13 @@ dataset:
 
 
 model:
-  baseline: ['base', 'GNI', 'advGNI', 'dropout', 'mixup', 'FGSM', 'cutout', 'PGD', 'FGSM_RS']
+  baseline: ['base', 'advGNI', 'FGSM', 'PGD', 'FGSM_RS', 'FGSM_gradalign']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
   CIFAR10: 'ResNet'
 
   ResNet:
     eta: 8 # eta/255. will be used following convention
-  cutout:
-    length: 16
-  mixup:
-    alpha: 1.
   PGD:
     iters: 10
 

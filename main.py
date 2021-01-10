@@ -26,9 +26,7 @@ def get_arguments():
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'GNI', 'advGNI', 'dropout', 'mixup', 'cutout', 'PGD', 'FGSM', 'FGSM_RS'")
-    parser.add_argument("--data_perturb", type=str, default=None, required=False,
-                        help="base, mixup, cutmix, cutout")
+                        help="'base', 'advGNI', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_gradalign'")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
     parser.add_argument("--resume_mode", type=str, default='adv_attack',
@@ -36,8 +34,6 @@ def get_arguments():
     parser.add_argument("--eta", type=float, default=None,
                         required=False, help="Variance")
     parser.add_argument("--PGD_iters", default=None, type=int, required=False, help="")
-    parser.add_argument("--mixup_alpha", type=float, default=None,
-                        required=False, help="")
     parser.add_argument("--num_epochs", type=int, default=None,
                         required=False, help="")
 
@@ -105,11 +101,6 @@ def main(config, args):
     if args.num_epochs is not None:
         print('epochs: ', args.num_epochs)
         config['train']['num_epochs'] = args.num_epochs
-    if args.mixup_alpha is not None:
-        assert structure == 'mixup'
-        print('mixup_alpha: ', args.mixup_alpha)
-        config['model']['mixup']['alpha'] = args.mixup_alpha
-
 
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as f:
         yaml.dump(config, f)
