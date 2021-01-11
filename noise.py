@@ -15,7 +15,7 @@ import advertorch
 from advertorch.attacks import LinfPGDAttack, L2PGDAttack
 from advertorch.context import ctx_noparamgrad_and_eval
 from model.resnet import PreActResNet18
-from model.utils import attack_pgd, std_t, clamp, lower_limit, upper_limit
+from model.utils import attack_pgd, std_t, clamp, lower_limit, upper_limit, cosine_similarity
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from Visualize import plot_embedding
@@ -49,7 +49,6 @@ class GenByNoise(object):
         self._get_optimizer()
 
         self.log_loss = {}
-        self.log_loss['train_loss'] = []
         self.log_loss['val_acc'] = []
         self.log_loss['val_loss'] = []
         self.log_loss['training_time'] = 0.
@@ -72,10 +71,6 @@ class GenByNoise(object):
         self.opt_theta = torch.optim.SGD(self.model.optim_theta(), opt_param['lr'][self.data_name],
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
         self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
-        if self.structure == 'advGNI':
-            self.opt_phi = torch.optim.SGD(self.model.optim_phi(), opt_param['lr'][self.data_name],
-                                            weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
-            self.phi_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_phi, [60,120,160], 0.1)
 
     def train(self):
         epochs = self.config['train']['num_epochs']
@@ -126,8 +121,6 @@ class GenByNoise(object):
                 # -------------------------
                 # 1. Obtain a grad mask
                 # -------------------------
-                self.opt_phi.zero_grad()
-
                 x.requires_grad = True
                 logit_clean = self.model(x, hook=True)
                 loss = self.cen(logit_clean, y)
@@ -139,33 +132,16 @@ class GenByNoise(object):
                 # 2. Train theta
                 # -------------------------
                 self.opt_theta.zero_grad()
-                self.opt_phi.zero_grad()
                 self.model.zero_grad()
 
-                logit_adv = self.model(x, add_adv=True, detach_noise=True)
+                logit_adv = self.model(x, add_adv=True)
 
                 # Main loss with adversarial example
                 theta_loss = self.cen(logit_adv, y)
                 theta_loss.backward()
                 self.opt_theta.step()
 
-                # -------------------------
-                # 3. Train phi
-                # -------------------------
-                self.opt_theta.zero_grad()
-                self.opt_phi.zero_grad()
-                self.model.zero_grad()
-
-                logit_adv = self.model(x, add_adv=True, detach_noise=False)
-
-                # phi loss for adversarial noise distribution
-                phi_loss = - self.cen(logit_adv, y)
-                phi_loss.backward()
-                self.opt_phi.step()
-
-                if n_iter % 1000 == 0: print('phi_loss: ', phi_loss)
-
-            elif self.structure == 'FGSM' or self.structure == 'FGSM_gradalign':
+            elif self.structure == 'FGSM' or self.structure == 'FGSM_GA':
                 x.requires_grad = True
                 logit_clean = self.model(x)
                 yhat_clean = nn.Softmax(dim=1)(logit_clean)
@@ -183,21 +159,54 @@ class GenByNoise(object):
                 loss = self.cen(logit_adv, y)
 
                 reg = torch.zeros(1).cuda()[0]
-                if self.structure == 'FGSM_gradalign':
+
+                """
+                if self.structure == 'FGSM_GA':
+                    # Gradient alignment
+                    X_new = torch.cat([x.clone(), x.clone()], dim=0)
+                    Y_new = torch.cat([y.clone(), y.clone()], dim=0)
+
+                    delta1 = torch.zeros(x.shape).cuda()
+                    delta2 = torch.zeros(x.shape).cuda()
+
+                    for j in range(len(self.epsilon)):
+                        delta1[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
+                        delta2[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
+                        delta1.data = clamp(delta1, lower_limit - x, upper_limit - x)
+                        delta2.data = clamp(delta2, lower_limit - x, upper_limit - x)
+
+                    delta1.requires_grad = True
+                    delta2.requires_grad = True
+
+                    X_new[:len(x)] += delta1
+                    X_new[len(x):] += delta2
+                    X_new = clamp(X_new, lower_limit, upper_limit)
+
+                    pre = self.model(X_new)
+                    loss = self.cen(pre, Y_new)
+
+                    grad1, grad2 = torch.autograd.grad(loss, [delta1, delta2], create_graph=True)
+                    cos = cosine_similarity(grad1, grad2)
+                    reg = 0.2*(1.-cos)
+
+                """
+                if self.structure == 'FGSM_GA':
                     # Gradient alignment
                     delta = torch.zeros(x.shape).cuda()
                     for j in range(len(self.epsilon)):
                         delta[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
+                        delta.data = clamp(delta, lower_limit - x, upper_limit - x)
                     delta.requires_grad = True
 
                     delta_output = self.model(x + delta)
                     delta_loss = self.cen(delta_output, y)
 
                     adv_grad = torch.autograd.grad(delta_loss, delta, create_graph=True)[0]
-                    grad, adv_grad = grad.reshape(len(grad), -1), adv_grad.reshape(len(adv_grad), -1)
-                    cos = torch.nn.functional.cosine_similarity(grad, adv_grad, 1)
-                    print(cos)
-                    reg = 0.2*(1. - cos.mean())
+                    cos = cosine_similarity(grad, adv_grad)
+                    #grad, adv_grad = grad.reshape(len(grad), -1), adv_grad.reshape(len(adv_grad), -1)
+                    #cos = torch.nn.functional.cosine_similarity(grad, adv_grad, 1)
+                    if n_iter % 1000 == 0: print(cos)
+                    reg = self.config['model']['FGSM_GA']['coeff']*(1. - cos)
 
                 loss += reg
                 loss.backward()
@@ -244,8 +253,6 @@ class GenByNoise(object):
             n_iter += 1
 
         self.theta_scheduler.step()
-        if self.structure == 'advGNI':
-            self.phi_scheduler.step()
 
         x,y = first_batch
 
@@ -254,13 +261,14 @@ class GenByNoise(object):
         with torch.no_grad():
             output = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
         robust_acc = (output.max(1)[1] == y).sum().item() / y.size(0)
-        if robust_acc - self.prev_adv_acc < -0.2:
-            torch.save({
-                'model': self.model.state_dict(),
-            }, os.path.join(self.snapshot_dir, 'pretrain_'+str(epoch)+'.pth'))
-            print('Erroneous behavior, epoch={}, acc={}, prev_adv_acc={}'.format(
-                epoch, robust_acc, self.prev_adv_acc))
-        elif robust_acc > self.prev_adv_acc:
+
+        torch.save({
+            'model': self.model.state_dict(),
+        }, os.path.join(self.snapshot_dir, 'pretrain_'+str(epoch)+'.pth'))
+        print('Save model, epoch={}, acc={}, prev_adv_acc={}'.format(
+            epoch, robust_acc, self.prev_adv_acc))
+
+        if robust_acc > self.prev_adv_acc:
             torch.save({
                 'model': self.model.state_dict(),
             }, os.path.join(self.snapshot_dir, 'pretrain_best.pth'))

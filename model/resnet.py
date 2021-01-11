@@ -17,6 +17,8 @@ class PreActResNet(nn.Module):
         self.input_size = config['dataset'][self.data_name]['input_size']
         self.architecture = config['model']['baseline']
         self.eta = self.config['model']['ResNet']['eta']
+        self.coeff_lower = self.config['model']['advGNI']['coeff_lower']
+        self.coeff_higher = self.config['model']['advGNI']['coeff_higher']
 
         self.in_planes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -28,12 +30,12 @@ class PreActResNet(nn.Module):
         self.linear = nn.Linear(512 * block.expansion, self.num_cls)
 
         self.noisy_module = nn.ModuleDict({
-            'input': NoisyCNNModule(self.architecture, self.eta/255., True, 3, size=self.input_size),
-            'conv1': NoisyCNNModule(self.architecture, self.eta/255., indim=64, size=self.input_size),
-            'layer1': NoisyCNNModule(self.architecture, self.eta/255., indim=64, size=self.input_size),
-            'layer2': NoisyCNNModule(self.architecture, self.eta/255., indim=128, size=self.input_size//2),
-            'layer3': NoisyCNNModule(self.architecture, self.eta/255., indim=256, size=self.input_size//4),
-            'layer4': NoisyCNNModule(self.architecture, self.eta/255., indim=512, size=self.input_size//8),
+            'input': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower, True),
+            'conv1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'layer1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'layer2': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'layer3': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'layer4': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_higher)
         })
 
         self.grads = {
@@ -58,33 +60,33 @@ class PreActResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x, add_adv=False, hook=False, detach_noise=False):
-        x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv, detach_noise)
+    def forward(self, x, add_adv=False, hook=False):
+        x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv)
 
         h = self.conv1(x_hat)
         if hook:
             h.register_hook(self.save_grad('conv1'))
-        h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv, detach_noise)
+        h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv)
 
         h = self.layer1(h)
         if hook:
             h.register_hook(self.save_grad('layer1'))
-        h = self.noisy_module['layer1'](h, self.grads['layer1'], add_adv, detach_noise)
+        h = self.noisy_module['layer1'](h, self.grads['layer1'], add_adv)
 
         h = self.layer2(h)
         if hook:
             h.register_hook(self.save_grad('layer2'))
-        h = self.noisy_module['layer2'](h, self.grads['layer2'], add_adv, detach_noise)
+        h = self.noisy_module['layer2'](h, self.grads['layer2'], add_adv)
 
         h = self.layer3(h)
         if hook:
             h.register_hook(self.save_grad('layer3'))
-        h = self.noisy_module['layer3'](h, self.grads['layer3'], add_adv, detach_noise)
+        h = self.noisy_module['layer3'](h, self.grads['layer3'], add_adv)
 
         h = self.layer4(h)
         if hook:
             h.register_hook(self.save_grad('layer4'))
-        h = self.noisy_module['layer4'](h, self.grads['layer4'], add_adv, detach_noise)
+        h = self.noisy_module['layer4'](h, self.grads['layer4'], add_adv)
 
         h = F.relu(self.bn(h))
         h = F.avg_pool2d(h, 4)

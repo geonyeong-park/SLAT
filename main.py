@@ -21,12 +21,10 @@ def get_arguments():
                         help="yaml pathway")
     parser.add_argument("--exp_name", type=str, default='', required=True,
                         help="")
-    parser.add_argument("--exp_detail", type=str, default=None, required=False,
-                        help="")
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'advGNI', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_gradalign'")
+                        help="'base', 'advGNI', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA'")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
     parser.add_argument("--resume_mode", type=str, default='adv_attack',
@@ -34,6 +32,9 @@ def get_arguments():
     parser.add_argument("--eta", type=float, default=None,
                         required=False, help="Variance")
     parser.add_argument("--PGD_iters", default=None, type=int, required=False, help="")
+    parser.add_argument("--coeff_lower", default=None, type=float, required=False, help="")
+    parser.add_argument("--coeff_higher", default=None, type=float, required=False, help="")
+    parser.add_argument("--GA_coeff", default=None, type=float, required=False, help="")
     parser.add_argument("--num_epochs", type=int, default=None,
                         required=False, help="")
 
@@ -59,12 +60,6 @@ def main(config, args):
 
     config['exp_setting']['snapshot_dir'] = snapshot_dir
     config['exp_setting']['log_dir'] = log_dir
-
-    if args.exp_detail is not None:
-        print(args.exp_detail)
-        with open(os.path.join(log_dir, 'exp_detail.txt'), 'w') as f:
-            f.write(args.exp_detail+'\n')
-            f.close()
 
     # -------------------------------
     # Setting GPU
@@ -98,6 +93,15 @@ def main(config, args):
     if args.PGD_iters is not None:
         print('PGD iters: {}'.format(args.PGD_iters))
         config['model']['PGD']['iters'] = args.PGD_iters
+    if args.coeff_lower is not None:
+        print('Alpha for low layers: {}'.format(args.coeff_lower))
+        config['model']['advGNI']['coeff_lower'] = args.coeff_lower
+    if args.coeff_higher is not None:
+        print('Alpha for high layers: {}'.format(args.coeff_higher))
+        config['model']['advGNI']['coeff_higher'] = args.coeff_higher
+    if args.GA_coeff is not None:
+        print('Coeff for Gradient Alignment: {}'.format(args.GA_coeff))
+        config['model']['FGSM_GA']['coeff'] = args.GA_coeff
     if args.num_epochs is not None:
         print('epochs: ', args.num_epochs)
         config['train']['num_epochs'] = args.num_epochs

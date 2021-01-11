@@ -12,65 +12,16 @@ std_t = torch.tensor(std).view(3,1,1).to('cuda')
 
 upper_limit = ((1. - mu_t)/ std_t)
 lower_limit = ((0. - mu_t)/ std_t)
-#upper_limit = torch.tensor(1.).to('cuda')
-#lower_limit = torch.tensor(0.).to('cuda')
-
-phi_config = {
-    (3, 32): [64, 128, 256, 256, 512],
-    (64, 32): [64, 128, 256, 256, 512],
-    (128, 16): [128, 256, 256, 512],
-    (256, 8): [256, 512, 512],
-    (512, 4): [512, 512]
-}
-
-
-class PhiNet(nn.Module):
-    def __init__(self, indim, size):
-        super(PhiNet, self).__init__()
-        self.config = phi_config[(indim, size)]
-        self.fn = nn.ReLU()
-
-        conv_list = []
-        bn_list = []
-        in_channel = indim
-
-        for out_channel in self.config:
-            conv_list.append(nn.Conv2d(in_channel, out_channel, kernel_size=4, stride=2, padding=1))
-            bn_list.append(nn.BatchNorm2d(out_channel))
-            in_channel = out_channel
-
-        self.conv_list = nn.ModuleList(conv_list)
-        self.bn_list = nn.ModuleList(bn_list)
-        self.fc_mu = nn.Linear(out_channel, 1)
-        self.fc_std = nn.Linear(out_channel, 1)
-
-    def forward(self, x):
-        h = x
-        for conv, bn in zip(self.conv_list, self.bn_list):
-            h = conv(h)
-            h = bn(h)
-            h = self.fn(h)
-        mu_ = self.fc_mu(h.view(-1, self.config[-1]))
-        std_ = self.fc_std(h.view(-1, self.config[-1]))
-
-        mu = nn.Sigmoid()(mu_)
-        std = nn.Sigmoid()(std_)
-        return mu, std
-
 
 class NoisyCNNModule(nn.Module):
-    def __init__(self, architecture, eta, input=False, indim=3, size=32):
+    def __init__(self, architecture, eta, alpha_coeff=0., input=False):
         super(NoisyCNNModule, self).__init__()
         self.architecture = architecture
         self.input = input
+        self.alpha_coeff = alpha_coeff
         self.eta = eta / std_t if input else torch.tensor(eta).to('cuda')
-        self.indim = indim
-        self.size = size
 
-        if architecture == 'advGNI':
-            self.phi = PhiNet(indim, size)
-
-    def forward(self, x, grad_mask=None, add_adv=False, detach_noise=False):
+    def forward(self, x, grad_mask=None, add_adv=False):
         if self.training:
             if self.architecture == 'GNI':
                 x_hat = x + torch.randn_like(x) * sqrt(0.001)
@@ -83,35 +34,17 @@ class NoisyCNNModule(nn.Module):
                     with torch.no_grad():
                         sgn_mask = grad_mask.data.sign()
 
-                    mu, std = self.phi(x)
-
-                    if random.random() > 0.999:
-                        print('[{}/{}] mu_min: {}, mu_max: {}, mu_mean: {}\t'.format(self.indim, self.size,
-                                                                            torch.min(mu),torch.max(mu),torch.mean(mu)))
-                        print('[{}/{}] std_min: {}, std_max: {}, std_mean: {}\t'.format(self.indim, self.size,
-                                                                            torch.min(std),torch.max(std),torch.mean(std)))
-
-                    mu, std = mu.view(mu.shape[0],1,1,1), std.view(std.shape[0],1,1,1)
-                    mu = mu.repeat(1,x.shape[1],x.shape[2],x.shape[3])
-                    std = std.repeat(1,x.shape[1],x.shape[2],x.shape[3])
-                    adv_noise_raw = torch.abs(mu + std*torch.randn_like(x)) * self.eta
-                    #adv_noise_raw = torch.abs(mu + 0.2*torch.randn_like(x)) * self.eta
-
-                    adv_noise = sgn_mask * adv_noise_raw
+                    adv_noise = sgn_mask * self.eta * self.alpha_coeff
                     adv_noise.data = clamp(adv_noise, -self.eta, self.eta)
                     if self.input:
                         adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
 
-                    if detach_noise:
-                        adv_noise = adv_noise.detach()
-                    else:
-                        x = x.detach()
-
+                    adv_noise = adv_noise.detach()
                     x_hat = x + adv_noise
                     return x_hat
                 else:
                     return x
-            elif self.architecture == 'FGSM':
+            elif self.architecture == 'FGSM' or self.architecture == 'FGSM_GA':
                 if add_adv and self.input:
                     grad_mask = grad_mask.detach()
 
@@ -213,3 +146,19 @@ def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
         max_delta[all_loss >= max_loss] = delta.detach()[all_loss >= max_loss]
         max_loss = torch.max(max_loss, all_loss)
     return max_delta
+
+def cosine_similarity(grad1, grad2):
+    grads_nnz_idx = ((grad1**2).sum([1, 2, 3])**0.5 != 0) * ((grad2**2).sum([1, 2, 3])**0.5 != 0)
+    grad1, grad2 = grad1[grads_nnz_idx], grad2[grads_nnz_idx]
+    grad1_norms = _l2_norm_batch(grad1)
+    grad2_norms = _l2_norm_batch(grad2)
+    grad1_normalized = grad1 / grad1_norms[:, None, None, None]
+    grad2_normalized = grad2 / grad2_norms[:, None, None, None]
+    cos = torch.sum(grad1_normalized * grad2_normalized, (1, 2, 3))
+    cos_aggr = cos.mean()
+    return cos_aggr
+
+def _l2_norm_batch(v):
+    norms = (v ** 2).sum([1, 2, 3]) ** 0.5
+    # norms[norms == 0] = np.inf
+    return norms

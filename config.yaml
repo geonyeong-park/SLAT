@@ -4,11 +4,11 @@ exp_setting:
   log_dir: 'log'
   use_tensorboard: True
   log_every_n_steps: 200
-  save_every_n_epochs: 10
+  save_every_n_epochs: 100
 
 
 dataset:
-  name: 'MNIST'
+  name: 'CIFAR10'
   MNIST:
     name: 'MNIST'
     batch_size: 256
@@ -35,7 +35,7 @@ dataset:
 
 
 model:
-  baseline: ['base', 'advGNI', 'FGSM', 'PGD', 'FGSM_RS', 'FGSM_gradalign']
+  baseline: ['base', 'advGNI', 'FGSM', 'PGD', 'FGSM_RS', 'FGSM_GA']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
   CIFAR10: 'ResNet'
@@ -44,6 +44,11 @@ model:
     eta: 8 # eta/255. will be used following convention
   PGD:
     iters: 10
+  advGNI:
+    coeff_lower: 0.5
+    coeff_higher: 1.
+  FGSM_GA:
+    coeff: 0.2
 
 train:
   num_epochs: 200
@@ -54,4 +59,3 @@ optimizer:
     SVHN: 0.01
     CIFAR10: 0.01
   weight_decay: 0.0005
-  lr_decay: 0.99
