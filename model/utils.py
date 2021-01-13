@@ -80,6 +80,23 @@ class NoisyCNNModule(nn.Module):
                         return x_hat
                 else:
                     return x
+            elif self.architecture == 'PGD_hidden':
+                if not self.input:
+                    if add_adv:
+                        assert grad_mask is not None
+                        grad_mask = grad_mask.detach()
+
+                        with torch.no_grad():
+                            sgn_mask = grad_mask.data.sign()
+
+                        adv_noise = sgn_mask * self.eta * self.alpha_coeff
+                        adv_noise = adv_noise.detach()
+                        x_hat = x + adv_noise
+                        return x_hat
+                    else:
+                        return x
+                else:
+                    return x
             else:
                 # PGD will be included in noise.py
                 return x

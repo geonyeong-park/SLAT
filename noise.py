@@ -185,13 +185,19 @@ class GenByNoise(object):
                 loss.backward()
                 self.opt_theta.step()
 
-            elif self.structure == 'PGD':
+            elif self.structure == 'PGD' or self.structure == 'PGD_hidden':
                 # Code is partially from
                 # https://github.com/locuslab/fast_adversarial/blob/master/CIFAR10/train_pgd.py
                 delta = torch.zeros_like(x).to('cuda')
                 delta.requires_grad = True
-                for _ in range(self.config['model']['PGD']['iters']):
-                    output = self.model(x + delta)
+                for i in range(self.config['model']['PGD']['iters']):
+                    if self.structure == 'PGD_hidden':
+                        add_adv = False if i == 0 else True
+                        hook = True
+                    else:
+                        add_adv, hook = False, False
+
+                    output = self.model(x + delta, hook=hook, add_adv=add_adv)
                     loss = self.cen(output, y)
                     loss.backward()
 
@@ -200,7 +206,16 @@ class GenByNoise(object):
                     delta.data = clamp(delta, lower_limit - x, upper_limit - x)
                     delta.grad.zero_()
                 delta = delta.detach()
-                output = self.model(x + delta)
+                if self.structure == 'PGD_hidden':
+                    hook = False
+                    add_adv = True
+                else:
+                    hook, add_adv = False, False
+                output = self.model(x + delta, hook=hook, add_adv=add_adv)
+                loss = self.cen(output, y)
+                self.opt_theta.zero_grad()
+                loss.backward()
+                self.opt_theta.step()
 
             elif self.structure == 'FGSM_RS':
                 logit = self.model(x)
@@ -230,12 +245,6 @@ class GenByNoise(object):
         with torch.no_grad():
             output = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
         robust_acc = (output.max(1)[1] == y).sum().item() / y.size(0)
-
-        torch.save({
-            'model': self.model.state_dict(),
-        }, os.path.join(self.snapshot_dir, 'pretrain_'+str(epoch)+'.pth'))
-        print('Save model, epoch={}, acc={}, prev_adv_acc={}'.format(
-            epoch, robust_acc, self.prev_adv_acc))
 
         if robust_acc > self.prev_adv_acc:
             torch.save({

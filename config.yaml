@@ -35,7 +35,7 @@ dataset:
 
 
 model:
-  baseline: ['base', 'advGNI', 'FGSM', 'PGD', 'FGSM_RS', 'FGSM_GA']
+  baseline: ['base', 'advGNI', 'FGSM', 'PGD', 'PGD_hidden', 'FGSM_RS', 'FGSM_GA']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
   CIFAR10: 'ResNet'
@@ -43,7 +43,7 @@ model:
   ResNet:
     eta: 8 # eta/255. will be used following convention
   PGD:
-    iters: 10
+    iters: 7
   advGNI:
     coeff_lower: 0.5
     coeff_higher: 1.
