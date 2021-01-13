@@ -104,6 +104,8 @@ class GenByNoise(object):
                     self.log_loss['training_time'] = training_time
                     pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
 
+            self._validation(e, n_iter, advattack=True)
+
 
         print('Training Finished. Checking adversarial robustness...')
         self._validation(e, n_iter, advattack=True)
@@ -257,7 +259,7 @@ class GenByNoise(object):
         x,y = first_batch
 
         self.model.eval()
-        pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, 5, 1)
+        pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, 7, 1)
         with torch.no_grad():
             output = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
         robust_acc = (output.max(1)[1] == y).sum().item() / y.size(0)
@@ -284,7 +286,7 @@ class GenByNoise(object):
         loss = self.cen(logit, y)
         return loss
 
-    def _validation(self, epoch, n_iter, record=True, advattack=False, attack_iters=5, restarts=1):
+    def _validation(self, epoch, n_iter, record=True, advattack=False, attack_iters=7, restarts=1):
         with torch.no_grad():
             self.model.eval()
 

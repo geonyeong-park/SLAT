@@ -1,13 +1,15 @@
 import torch.nn as nn
 import torch
 from torchvision import models
-from model.utils import NoisyCNNModule, PreActBlock, mean, std
+from model.utils import NoisyCNNModule, mean, std
 import torch.nn.functional as F
 
 # PreActResNet Code is largely based on:
 # https://github.com/locuslab/fast_adversarial/tree/master/CIFAR10
 
 class PreActResNet(nn.Module):
+    add_adv = False
+    hook = False
     def __init__(self, block, num_blocks, config):
         super(PreActResNet, self).__init__()
 
@@ -26,6 +28,7 @@ class PreActResNet(nn.Module):
         self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+
         self.bn = nn.BatchNorm2d(512 * block.expansion)
         self.linear = nn.Linear(512 * block.expansion, self.num_cls)
 
@@ -61,6 +64,9 @@ class PreActResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, add_adv=False, hook=False):
+        PreActResNet.hook = hook
+        PreActResNet.add_adv = add_adv
+
         x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv)
 
         h = self.conv1(x_hat)
@@ -110,23 +116,37 @@ class PreActResNet(nn.Module):
                     if k.requires_grad:
                         yield k
 
-    def _yield_phi(self):
-        b = []
-        b.append(self.noisy_module)
-
-        for i in range(len(b)):
-            for j in b[i].modules():
-                jj = 0
-                for k in j.parameters():
-                    jj += 1
-                    if k.requires_grad:
-                        yield k
-
     def optim_theta(self):
         return [{'params': self._yield_theta()}]
 
-    def optim_phi(self):
-        return [{'params': self._yield_phi()}]
+
+class PreActBlock(nn.Module):
+    '''Pre-activation version of the BasicBlock.'''
+    expansion = 1
+
+    def __init__(self, in_planes, planes, stride=1):
+        super(PreActBlock, self).__init__()
+        self.bn1 = nn.BatchNorm2d(in_planes)
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+
+        if stride != 1 or in_planes != self.expansion*planes:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False)
+            )
+
+    def forward(self, x):
+        out = F.relu(self.bn1(x))
+        if hasattr(self, 'shortcut'):
+            shortcut = self.shortcut(x)
+        else:
+            shortcut = x
+
+        out = self.conv1(out)
+        out = self.conv2(F.relu(self.bn2(out)))
+        out += shortcut
+        return out
 
 
 def PreActResNet18(config):
