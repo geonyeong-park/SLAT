@@ -16,6 +16,7 @@ from advertorch.attacks import LinfPGDAttack, L2PGDAttack
 from advertorch.context import ctx_noparamgrad_and_eval
 from model.resnet import PreActResNet18
 from model.utils import attack_pgd, std_t, clamp, lower_limit, upper_limit, cosine_similarity
+from model.PGDtrainer import PGD
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from Visualize import plot_embedding
@@ -162,36 +163,6 @@ class GenByNoise(object):
 
                 reg = torch.zeros(1).cuda()[0]
 
-                """
-                if self.structure == 'FGSM_GA':
-                    # Gradient alignment
-                    X_new = torch.cat([x.clone(), x.clone()], dim=0)
-                    Y_new = torch.cat([y.clone(), y.clone()], dim=0)
-
-                    delta1 = torch.zeros(x.shape).cuda()
-                    delta2 = torch.zeros(x.shape).cuda()
-
-                    for j in range(len(self.epsilon)):
-                        delta1[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
-                        delta2[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
-                        delta1.data = clamp(delta1, lower_limit - x, upper_limit - x)
-                        delta2.data = clamp(delta2, lower_limit - x, upper_limit - x)
-
-                    delta1.requires_grad = True
-                    delta2.requires_grad = True
-
-                    X_new[:len(x)] += delta1
-                    X_new[len(x):] += delta2
-                    X_new = clamp(X_new, lower_limit, upper_limit)
-
-                    pre = self.model(X_new)
-                    loss = self.cen(pre, Y_new)
-
-                    grad1, grad2 = torch.autograd.grad(loss, [delta1, delta2], create_graph=True)
-                    cos = cosine_similarity(grad1, grad2)
-                    reg = 0.2*(1.-cos)
-
-                """
                 if self.structure == 'FGSM_GA':
                     # Gradient alignment
                     delta = torch.zeros(x.shape).cuda()
@@ -230,10 +201,6 @@ class GenByNoise(object):
                     delta.grad.zero_()
                 delta = delta.detach()
                 output = self.model(x + delta)
-                loss = self.cen(output, y)
-                self.opt_theta.zero_grad()
-                loss.backward()
-                self.opt_theta.step()
 
             elif self.structure == 'FGSM_RS':
                 logit = self.model(x)
