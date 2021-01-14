@@ -15,6 +15,7 @@ import advertorch
 from advertorch.attacks import LinfPGDAttack, L2PGDAttack
 from advertorch.context import ctx_noparamgrad_and_eval
 from model.resnet import PreActResNet18
+from model.wide_resnet import WideResNet28_10
 from model.utils import attack_pgd, std_t, clamp, lower_limit, upper_limit, cosine_similarity
 from model.PGDtrainer import PGD
 from sklearn.manifold import TSNE
@@ -38,6 +39,9 @@ class GenByNoise(object):
         network = config['model'][self.data_name]
         if network == 'ResNet':
             self.model = PreActResNet18(config).to(self.device)
+            eta = config['model']['ResNet']['eta']
+        elif network == 'Wide_ResNet':
+            self.model = WideResNet28_10(config).to(self.device)
             eta = config['model']['ResNet']['eta']
         else:
             raise ValueError('Not implemented yet')
@@ -69,7 +73,7 @@ class GenByNoise(object):
     def _get_optimizer(self):
         opt_param = self.config['optimizer']
 
-        self.opt_theta = torch.optim.SGD(self.model.optim_theta(), opt_param['lr'][self.data_name],
+        self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr'][self.data_name],
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
         self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
 

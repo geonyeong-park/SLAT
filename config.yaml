@@ -38,7 +38,7 @@ model:
   baseline: ['base', 'advGNI', 'FGSM', 'PGD', 'PGD_hidden', 'FGSM_RS', 'FGSM_GA']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
-  CIFAR10: 'ResNet'
+  CIFAR10: 'Wide_ResNet'
 
   ResNet:
     eta: 8 # eta/255. will be used following convention
@@ -48,7 +48,7 @@ model:
     coeff_lower: 0.5
     coeff_higher: 1.
   FGSM_GA:
-    coeff: 0.2
+    coeff: 1.0
 
 train:
   num_epochs: 200
