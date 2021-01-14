@@ -109,7 +109,8 @@ class GenByNoise(object):
                     self.log_loss['training_time'] = training_time
                     pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
 
-            self._validation(e, n_iter, advattack=True)
+            if (e+1) % 10 == 0:
+                self._validation(e, n_iter, advattack=True)
 
 
         print('Training Finished. Checking adversarial robustness...')
