@@ -39,9 +39,7 @@ class NetworkBlock(nn.Module):
         layers = []
         for i in range(nb_layers):
             layers.append(block(i == 0 and in_planes or out_planes, out_planes, i == 0 and stride or 1, dropRate))
-        return nn.Sequential(*layers)
-    def forward(self, x):
-        return self.layer(x)
+        return layers
 
 class WideResNet(nn.Module):
     def __init__(self, config, depth=28, widen_factor=10, dropRate=0.0, fc_input_dim_scale=1):
@@ -64,11 +62,20 @@ class WideResNet(nn.Module):
         self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
         # 1st block
-        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate)
+        block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate)
+        block1 = block1.layer
+        self.block1 = nn.ModuleList(block1)
+
         # 2nd block
-        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
+        block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
+        block2 = block2.layer
+        self.block2 = nn.Sequential(*block2)
+
         # 3rd block
-        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
+        block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
+        block3 = block3.layer
+        self.block3 = nn.Sequential(*block3)
+
         # global average pooling and classifier
         self.bn1 = nn.BatchNorm2d(nChannels[3])
         self.relu = nn.ReLU(inplace=True)
@@ -86,18 +93,32 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
 
         self.noisy_module = nn.ModuleDict({
-            'input': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower, True),
+            'input': NoisyCNNModule(self.architecture, self.eta/255., 0.5, True),
             'conv1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
-            'block1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block1_1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block1_2': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block1_3': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block1_4': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
             'block2': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block2_1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block2_2': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block2_3': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block2_4': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
             'block3': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_higher),
         })
 
         self.grads = {
             'input': None,
             'conv1': None,
-            'block1': None,
+            'block1_1': None,
+            'block1_2': None,
+            'block1_3': None,
+            'block1_4': None,
             'block2': None,
+            'block2_1': None,
+            'block2_2': None,
+            'block2_3': None,
+            'block2_4': None,
             'block3': None,
         }
 
@@ -113,21 +134,40 @@ class WideResNet(nn.Module):
         if hook:
             h.register_hook(self.save_grad('conv1'))
         h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv)
+        print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
 
-        h = self.block1(h)
+        h = self.block1[0](h)
         if hook:
-            h.register_hook(self.save_grad('block1'))
-        h = self.noisy_module['block1'](h, self.grads['block1'], add_adv)
+            h.register_hook(self.save_grad('block1_1'))
+        h = self.noisy_module['block1_1'](h, self.grads['block1_1'], add_adv)
+        print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
+
+        h = self.block1[1](h)
+        if hook:
+            h.register_hook(self.save_grad('block1_2'))
+        h = self.noisy_module['block1_2'](h, self.grads['block1_2'], add_adv)
+        print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
+
+        h = self.block1[2](h)
+        print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
+
+        h = self.block1[3](h)
+        if hook:
+            h.register_hook(self.save_grad('block1_4'))
+        h = self.noisy_module['block1_4'](h, self.grads['block1_4'], add_adv)
+        print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
 
         h = self.block2(h)
         if hook:
             h.register_hook(self.save_grad('block2'))
         h = self.noisy_module['block2'](h, self.grads['block2'], add_adv)
+        print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
 
         h = self.block3(h)
         if hook:
             h.register_hook(self.save_grad('block3'))
         h = self.noisy_module['block3'](h, self.grads['block3'], add_adv)
+        print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
 
         out = self.relu(self.bn1(h))
         out = F.avg_pool2d(out, 8)
