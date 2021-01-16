@@ -14,7 +14,7 @@ upper_limit = ((1. - mu_t)/ std_t)
 lower_limit = ((0. - mu_t)/ std_t)
 
 class NoisyCNNModule(nn.Module):
-    def __init__(self, architecture, eta, alpha_coeff=0., input=False):
+    def __init__(self, architecture, eta, alpha_coeff=0.5, input=False):
         super(NoisyCNNModule, self).__init__()
         self.architecture = architecture
         self.input = input
@@ -34,8 +34,10 @@ class NoisyCNNModule(nn.Module):
                     with torch.no_grad():
                         sgn_mask = grad_mask.data.sign()
 
+                        #alpha_coeff = 0.1*torch.max(torch.abs(x - self.buffer_h).view(x.shape[0], -1), dim=1).values
+                        #shape = sgn_mask.shape
+                        #alpha_coeff = alpha_coeff.view(-1,1,1,1).repeat([1,shape[1],shape[2],shape[3]])
                     adv_noise = sgn_mask * self.eta * self.alpha_coeff
-                    adv_noise.data = clamp(adv_noise, -self.eta, self.eta)
                     if self.input:
                         adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
 
@@ -43,6 +45,7 @@ class NoisyCNNModule(nn.Module):
                     x_hat = x + adv_noise
                     return x_hat
                 else:
+                    self.buffer_h = x
                     return x
             elif self.architecture == 'FGSM' or self.architecture == 'FGSM_GA':
                 if add_adv and self.input:
