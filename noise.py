@@ -49,9 +49,8 @@ class GenByNoise(object):
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
-        epochs = self.config['train']['num_epochs']
-        self.total_steps = epochs * len(self.train_loader)
         self._get_optimizer()
+        self.epochs = self.config['train']['num_epochs']
 
         self.log_loss = {}
         self.log_loss['val_acc'] = []
@@ -65,6 +64,14 @@ class GenByNoise(object):
         self.epsilon = (eta/ 255.) / std_t
         self.pgd_alpha = (eta*0.25 / 255.) / std_t
 
+        if config['model']['baseline'] == 'CURE':
+            checkpoint = torch.load('snapshots/ongoing_CURE_wideresnet/pretrain.pth')
+            self.model.load_state_dict(checkpoint['model'])
+            self.opt_theta = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+            self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
+            self.epochs = 50
+            print('load ckpt for CURE')
+
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print("Running on:", device)
@@ -77,14 +84,34 @@ class GenByNoise(object):
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
         self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
 
+    def pretrain(self):
+        """For CURE"""
+        for e in range(30):
+            self.model.train()
+
+            for i, (x, y) in enumerate(self.train_loader):
+                x = x.to(self.device)
+                y = y.long().to(self.device)
+                self.opt_theta.zero_grad()
+                self.model.zero_grad()
+
+                logit_clean = self.model(x)
+                loss = self.cen(logit_clean, y)
+                loss.backward()
+                self.opt_theta.step()
+            self._validation(e, None, advattack=False)
+        torch.save({
+            'model': self.model.state_dict(),
+        }, os.path.join(self.snapshot_dir, 'pretrain.pth'))
+        return
+
     def train(self):
-        epochs = self.config['train']['num_epochs']
         sample_path = os.path.join(self.log_dir, '{}epoch_log.pkl')
         n_iter = 0
         training_time = 0
         self.prev_adv_acc = 0.
 
-        for e in range(epochs):
+        for e in range(self.epochs):
             start = timer()
             self.model.train()
 
@@ -125,7 +152,7 @@ class GenByNoise(object):
             self.opt_theta.zero_grad()
             self.model.zero_grad()
 
-            if self.structure == 'advGNI':
+            if self.structure == 'advGNI' or self.structure == 'advGNI_GA':
                 # -------------------------
                 # 1. Obtain a grad mask
                 # -------------------------
@@ -134,8 +161,8 @@ class GenByNoise(object):
                 loss = self.cen(logit_clean, y)
 
                 loss.backward()
-                self.model.grads['input'] = x.grad.data
-
+                grad = x.grad.clone().data
+                self.model.grads['input'] = grad
                 # -------------------------
                 # 2. Train theta
                 # -------------------------
@@ -146,13 +173,48 @@ class GenByNoise(object):
 
                 # Main loss with adversarial example
                 theta_loss = self.cen(logit_adv, y)
-                theta_loss.backward()
+                retain_graph = True if self.structure == 'advGNI_GA' else False
+                theta_loss.backward(retain_graph=retain_graph)
+
+                if self.structure == 'advGNI_GA':
+                    adv_grad = x.grad.data
+                    cos = cosine_similarity(grad, adv_grad)
+                    cos.requires_grad = True
+                    if n_iter % 1000 == 0: print(cos)
+                    reg = self.config['model']['FGSM_GA']['coeff']*(1. - cos)
+                    reg.backward()
+
+                self.opt_theta.step()
+
+            elif self.structure == 'CURE':
+                x.requires_grad = True
+                logit_clean = self.model(x)
+                loss = self.cen(logit_clean, y)
+
+                loss.backward()
+                grad = x.grad.data
+                z = torch.sign(grad).detach() + 0.
+                h = min(1.5, 0.3*(epoch+1))
+                z = h*z / z.view(z.shape[0], -1).norm(dim=1)[:,None,None,None]
+
+                self.opt_theta.zero_grad()
+                self.model.zero_grad()
+
+                logit_hz = self.model(x+z)
+                loss_hz = self.cen(logit_hz, y)
+                grad_z = torch.autograd.grad(loss_hz, x, create_graph=True)[0]
+                grad_diff = grad - grad_z
+
+                reg = torch.mean(grad_diff.view(grad_diff.shape[0], -1).norm(dim=1))
+
+                loss = self.cen(self.model(x), y)
+                loss = loss + self.config['model']['CURE']['gamma']*reg
+                loss.backward()
                 self.opt_theta.step()
 
             elif self.structure == 'FGSM' or self.structure == 'FGSM_GA':
                 x.requires_grad = True
                 logit_clean = self.model(x)
-                yhat_clean = nn.Softmax(dim=1)(logit_clean)
                 loss = self.cen(logit_clean, y)
 
                 self.model.zero_grad()

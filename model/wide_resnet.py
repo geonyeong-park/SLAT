@@ -39,7 +39,10 @@ class NetworkBlock(nn.Module):
         layers = []
         for i in range(nb_layers):
             layers.append(block(i == 0 and in_planes or out_planes, out_planes, i == 0 and stride or 1, dropRate))
-        return layers
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.layer(x)
 
 class WideResNet(nn.Module):
     def __init__(self, config, depth=28, widen_factor=10, dropRate=0.0, fc_input_dim_scale=1):
@@ -62,19 +65,13 @@ class WideResNet(nn.Module):
         self.conv1 = nn.Conv2d(3, nChannels[0], kernel_size=3, stride=1,
                                padding=1, bias=False)
         # 1st block
-        block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate)
-        block1 = block1.layer
-        self.block1 = nn.ModuleList(block1)
+        self.block1 = NetworkBlock(n, nChannels[0], nChannels[1], block, 1, dropRate)
 
         # 2nd block
-        block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
-        block2 = block2.layer
-        self.block2 = nn.Sequential(*block2)
+        self.block2 = NetworkBlock(n, nChannels[1], nChannels[2], block, 2, dropRate)
 
         # 3rd block
-        block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
-        block3 = block3.layer
-        self.block3 = nn.Sequential(*block3)
+        self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
 
         # global average pooling and classifier
         self.bn1 = nn.BatchNorm2d(nChannels[3])
@@ -93,32 +90,18 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
 
         self.noisy_module = nn.ModuleDict({
-            'input': NoisyCNNModule(self.architecture, self.eta/255., 0.5, True),
-            'conv1': NoisyCNNModule(self.architecture, self.eta/255., 0.5),
-            'block1_1': NoisyCNNModule(self.architecture, self.eta/255, 1.),
-            'block1_2': NoisyCNNModule(self.architecture, self.eta/255, 1.),
-            'block1_3': NoisyCNNModule(self.architecture, self.eta/255., 1.),
-            'block1_4': NoisyCNNModule(self.architecture, self.eta/255., 1.),
+            'input': NoisyCNNModule(self.architecture, self.eta/255., 1., True),
+            'conv1': NoisyCNNModule(self.architecture, self.eta/255., 1.),
+            'block1': NoisyCNNModule(self.architecture, self.eta/255, 1.),
             'block2': NoisyCNNModule(self.architecture, self.eta/255., 1.),
-            'block2_1': NoisyCNNModule(self.architecture, self.eta/255., 1.),
-            'block2_2': NoisyCNNModule(self.architecture, self.eta/255., 1.),
-            'block2_3': NoisyCNNModule(self.architecture, self.eta/255., 1.),
-            'block2_4': NoisyCNNModule(self.architecture, self.eta/255., 1.),
             'block3': NoisyCNNModule(self.architecture, self.eta/255., 1.),
         })
 
         self.grads = {
             'input': None,
             'conv1': None,
-            'block1_1': None,
-            'block1_2': None,
-            'block1_3': None,
-            'block1_4': None,
+            'block1': None,
             'block2': None,
-            'block2_1': None,
-            'block2_2': None,
-            'block2_3': None,
-            'block2_4': None,
             'block3': None,
         }
 
@@ -135,22 +118,10 @@ class WideResNet(nn.Module):
             h.register_hook(self.save_grad('conv1'))
         h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv)
 
-        h = self.block1[0](h)
+        h = self.block1(h)
         if hook:
-            h.register_hook(self.save_grad('block1_1'))
-        h = self.noisy_module['block1_1'](h, self.grads['block1_1'], add_adv)
-
-        h = self.block1[1](h)
-        if hook:
-            h.register_hook(self.save_grad('block1_2'))
-        h = self.noisy_module['block1_2'](h, self.grads['block1_2'], add_adv)
-
-        h = self.block1[2](h)
-
-        h = self.block1[3](h)
-        if hook:
-            h.register_hook(self.save_grad('block1_4'))
-        h = self.noisy_module['block1_4'](h, self.grads['block1_4'], add_adv)
+            h.register_hook(self.save_grad('block1'))
+        h = self.noisy_module['block1'](h, self.grads['block1'], add_adv)
 
         h = self.block2(h)
         if hook:

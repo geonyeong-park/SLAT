@@ -27,6 +27,7 @@ class NoisyCNNModule(nn.Module):
                 x_hat = x + torch.randn_like(x) * sqrt(0.001)
                 return x_hat
             elif self.architecture == 'advGNI':
+            #elif self.architecture == 'advGNI' or self.architecture == 'advGNI_GA':
                 if add_adv:
                     assert grad_mask is not None
                     grad_mask = grad_mask.detach()
@@ -47,7 +48,8 @@ class NoisyCNNModule(nn.Module):
                 else:
                     self.buffer_h = x
                     return x
-            elif self.architecture == 'FGSM' or self.architecture == 'FGSM_GA':
+
+            elif self.architecture == 'FGSM' or self.architecture == 'FGSM_GA' or self.architecture == 'advGNI_GA':
                 if add_adv and self.input:
                     grad_mask = grad_mask.detach()
 

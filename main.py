@@ -24,8 +24,10 @@ def get_arguments():
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'advGNI', 'PGD', 'PGD_hidden', 'FGSM', 'FGSM_RS', 'FGSM_GA'")
+                        help="'base', 'advGNI', 'advGNI_GA', 'CURE', 'PGD', 'PGD_hidden', 'FGSM', 'FGSM_RS', 'FGSM_GA'")
     parser.add_argument("--resume", type=str, default=None,
+                        required=False, help="")
+    parser.add_argument("--pretrain", default=False, action='store_true',
                         required=False, help="")
     parser.add_argument("--resume_mode", type=str, default='adv_attack',
                         required=False, help="normal or adv_attack")
@@ -113,6 +115,10 @@ def main(config, args):
     dataset = DataWrapper(config)
     solver = GenByNoise(dataset, config)
 
+    if args.pretrain:
+        solver.pretrain()
+        print('Pretraining Finished')
+        return
 
     if args.resume is None:
         solver.train()

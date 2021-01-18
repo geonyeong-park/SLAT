@@ -35,7 +35,7 @@ dataset:
 
 
 model:
-  baseline: ['base', 'advGNI', 'FGSM', 'PGD', 'PGD_hidden', 'FGSM_RS', 'FGSM_GA']
+  baseline: ['base', 'advGNI', 'advGNI_GA', 'FGSM', 'CURE', 'PGD', 'PGD_hidden', 'FGSM_RS', 'FGSM_GA']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
   CIFAR10: 'Wide_ResNet'
@@ -49,6 +49,8 @@ model:
     coeff_higher: 1.
   FGSM_GA:
     coeff: 1.0
+  CURE:
+    gamma: 8.
 
 train:
   num_epochs: 200
