@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 import random
 from math import sqrt
+from utils.utils import clamp
 
 mean = [0.4914, 0.4822, 0.4465]
 std = [0.2471, 0.2435, 0.2616]
@@ -13,9 +14,9 @@ std_t = torch.tensor(std).view(3,1,1).to('cuda')
 upper_limit = ((1. - mu_t)/ std_t)
 lower_limit = ((0. - mu_t)/ std_t)
 
-class NoisyCNNModule(nn.Module):
+class HiddenPerturb(nn.Module):
     def __init__(self, architecture, eta, alpha_coeff=0.5, input=False):
-        super(NoisyCNNModule, self).__init__()
+        super(HiddenPerturb, self).__init__()
         self.architecture = architecture
         self.input = input
         self.alpha_coeff = alpha_coeff
@@ -85,51 +86,3 @@ class NoisyCNNModule(nn.Module):
                 return x
         else:
             return x
-
-def clamp(X, lower_limit, upper_limit):
-    return torch.max(torch.min(X, upper_limit), lower_limit)
-
-def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
-    max_loss = torch.zeros(y.shape[0]).to('cuda')
-    max_delta = torch.zeros_like(X).to('cuda')
-    for zz in range(restarts):
-        delta = torch.zeros_like(X).to('cuda')
-        for i in range(len(epsilon)):
-            delta[:, i, :, :].uniform_(-epsilon[i][0][0].item(), epsilon[i][0][0].item())
-        delta.data = clamp(delta, lower_limit - X, upper_limit - X)
-        delta.requires_grad = True
-        for _ in range(attack_iters):
-            output = model(X + delta)
-            index = torch.where(output.max(1)[1] == y)
-            if len(index[0]) == 0:
-                break
-            loss = F.cross_entropy(output, y)
-            loss.backward()
-
-            grad = delta.grad.detach()
-            d = delta[index[0], :, :, :]
-            g = grad[index[0], :, :, :]
-            d = clamp(d + alpha * torch.sign(g), -epsilon, epsilon)
-            d = clamp(d, lower_limit - X[index[0], :, :, :], upper_limit - X[index[0], :, :, :])
-            delta.data[index[0], :, :, :] = d
-            delta.grad.zero_()
-        all_loss = F.cross_entropy(model(X+delta), y, reduction='none').detach()
-        max_delta[all_loss >= max_loss] = delta.detach()[all_loss >= max_loss]
-        max_loss = torch.max(max_loss, all_loss)
-    return max_delta
-
-def cosine_similarity(grad1, grad2):
-    grads_nnz_idx = ((grad1**2).sum([1, 2, 3])**0.5 != 0) * ((grad2**2).sum([1, 2, 3])**0.5 != 0)
-    grad1, grad2 = grad1[grads_nnz_idx], grad2[grads_nnz_idx]
-    grad1_norms = _l2_norm_batch(grad1)
-    grad2_norms = _l2_norm_batch(grad2)
-    grad1_normalized = grad1 / grad1_norms[:, None, None, None]
-    grad2_normalized = grad2 / grad2_norms[:, None, None, None]
-    cos = torch.sum(grad1_normalized * grad2_normalized, (1, 2, 3))
-    cos_aggr = cos.mean()
-    return cos_aggr
-
-def _l2_norm_batch(v):
-    norms = (v ** 2).sum([1, 2, 3]) ** 0.5
-    # norms[norms == 0] = np.inf
-    return norms

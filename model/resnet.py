@@ -1,8 +1,9 @@
 import torch.nn as nn
 import torch
 from torchvision import models
-from model.utils import NoisyCNNModule, mean, std
+from utils.utils import mean, std
 import torch.nn.functional as F
+from model.hidden_module import HiddenPerturb
 
 # PreActResNet Code is largely based on:
 # https://github.com/locuslab/fast_adversarial/tree/master/CIFAR10
@@ -39,12 +40,12 @@ class PreActResNet(nn.Module):
             self.coeff_lower, self.coeff_higher = 0., 0.
 
         self.noisy_module = nn.ModuleDict({
-            'input': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower, True),
-            'conv1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
-            'layer1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
-            'layer2': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
-            'layer3': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
-            'layer4': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_higher)
+            'input': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower, True),
+            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
+            'layer1': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
+            'layer2': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
+            'layer3': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
+            'layer4': HiddenPerturb(self.architecture, self.eta/255., self.coeff_higher)
         })
 
         self.grads = {

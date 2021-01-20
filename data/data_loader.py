@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torchvision import datasets
-from model.utils import mean, std
+from utils.utils import mean, std
 import importlib
 import PIL
 from PIL import Image, ImageChops

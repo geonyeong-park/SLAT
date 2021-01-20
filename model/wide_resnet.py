@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from model.utils import NoisyCNNModule, mean, std
+from model.hidden_module import HiddenPerturb
 
 # Modified from https://github.com/bearpaw/pytorch-classification/blob/master/models/cifar/wrn.py
 class BasicBlock(nn.Module):
@@ -96,11 +96,11 @@ class WideResNet(nn.Module):
             self.coeff_lower, self.coeff_higher = 0., 0.
 
         self.noisy_module = nn.ModuleDict({
-            'input': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower, True),
-            'conv1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
-            'block1': NoisyCNNModule(self.architecture, self.eta/255, self.coeff_lower),
-            'block2': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
-            'block3': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_higher),
+            'input': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower, True),
+            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
+            'block1': HiddenPerturb(self.architecture, self.eta/255, self.coeff_lower),
+            'block2': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
+            'block3': HiddenPerturb(self.architecture, self.eta/255., self.coeff_higher),
         })
 
         self.grads = {

@@ -4,7 +4,7 @@ import os
 import os.path as osp
 import torch
 from shutil import copyfile
-from noise import GenByNoise
+from solver import Solver
 from data.data_loader import DataWrapper
 import torch.backends.cudnn as cudnn
 
@@ -29,8 +29,6 @@ def get_arguments():
                         required=False, help="")
     parser.add_argument("--pretrain", default=False, action='store_true',
                         required=False, help="")
-    parser.add_argument("--resume_mode", type=str, default='adv_attack',
-                        required=False, help="normal or adv_attack")
     parser.add_argument("--eta", type=float, default=None,
                         required=False, help="Variance")
     parser.add_argument("--PGD_iters", default=None, type=int, required=False, help="")
@@ -85,10 +83,7 @@ def main(config, args):
         config['model']['baseline'] = structure
     if args.resume is not None:
         checkpoint = torch.load(args.resume)
-        mode = args.resume_mode
-        assert mode == 'adv_attack' or mode == 'normal'
         print('load {}'.format(args.resume))
-        print('resume mode: {}'.format(mode))
     if args.eta is not None:
         print('Eta: ', args.eta)
         config['model']['ResNet']['eta'] = args.eta
@@ -113,7 +108,7 @@ def main(config, args):
     # -------------------------------
 
     dataset = DataWrapper(config)
-    solver = GenByNoise(dataset, config)
+    solver = Solver(dataset, config)
 
     if args.pretrain:
         solver.pretrain()
@@ -123,7 +118,7 @@ def main(config, args):
     if args.resume is None:
         solver.train()
     else:
-        solver.test(checkpoint, mode)
+        solver.test(checkpoint)
 
 
 
