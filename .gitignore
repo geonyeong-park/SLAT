@@ -3,7 +3,10 @@ log/
 snapshots/
 __pycache__/
 *.ipynb
-solver.py
 *.png
 *.sh
 test.py
+model/PGDtrainer.py
+gaussian_test.py
+gaussian/
+visualize/visualize_stats.py
