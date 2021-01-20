@@ -53,8 +53,6 @@ class WideResNet(nn.Module):
         num_classes = config['dataset'][self.data_name]['num_cls']
         self.architecture = config['model']['baseline']
         self.eta = self.config['model']['ResNet']['eta']
-        self.coeff_lower = self.config['model']['advGNI']['coeff_lower']
-        self.coeff_higher = self.config['model']['advGNI']['coeff_higher']
 
         nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
         assert (depth - 4) % 6 == 0, 'depth should be 6n+4'
@@ -89,12 +87,20 @@ class WideResNet(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
+        if self.architecture == 'advGNI':
+            self.coeff_lower = 0.5
+            self.coeff_higher = 1.
+        elif self.architecture == 'advGNI_GA':
+            self.coeff_lower, self.coeff_higher = 1., 1.
+        else:
+            self.coeff_lower, self.coeff_higher = 0., 0.
+
         self.noisy_module = nn.ModuleDict({
-            'input': NoisyCNNModule(self.architecture, self.eta/255., 1., True),
-            'conv1': NoisyCNNModule(self.architecture, self.eta/255., 1.),
-            'block1': NoisyCNNModule(self.architecture, self.eta/255, 1.),
-            'block2': NoisyCNNModule(self.architecture, self.eta/255., 1.),
-            'block3': NoisyCNNModule(self.architecture, self.eta/255., 1.),
+            'input': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower, True),
+            'conv1': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block1': NoisyCNNModule(self.architecture, self.eta/255, self.coeff_lower),
+            'block2': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower),
+            'block3': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_higher),
         })
 
         self.grads = {

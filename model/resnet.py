@@ -19,8 +19,6 @@ class PreActResNet(nn.Module):
         self.input_size = config['dataset'][self.data_name]['input_size']
         self.architecture = config['model']['baseline']
         self.eta = self.config['model']['ResNet']['eta']
-        self.coeff_lower = self.config['model']['advGNI']['coeff_lower']
-        self.coeff_higher = self.config['model']['advGNI']['coeff_higher']
 
         self.in_planes = 64
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
@@ -31,6 +29,14 @@ class PreActResNet(nn.Module):
 
         self.bn = nn.BatchNorm2d(512 * block.expansion)
         self.linear = nn.Linear(512 * block.expansion, self.num_cls)
+
+        if self.architecture == 'advGNI':
+            self.coeff_lower = 0.5
+            self.coeff_higher = 1.
+        elif self.architecture == 'advGNI_GA':
+            self.coeff_lower, self.coeff_higher = 1., 1.
+        else:
+            self.coeff_lower, self.coeff_higher = 0., 0.
 
         self.noisy_module = nn.ModuleDict({
             'input': NoisyCNNModule(self.architecture, self.eta/255., self.coeff_lower, True),

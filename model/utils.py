@@ -26,8 +26,7 @@ class NoisyCNNModule(nn.Module):
             if self.architecture == 'GNI':
                 x_hat = x + torch.randn_like(x) * sqrt(0.001)
                 return x_hat
-            elif self.architecture == 'advGNI':
-            #elif self.architecture == 'advGNI' or self.architecture == 'advGNI_GA':
+            elif self.architecture == 'advGNI' or self.architecture == 'advGNI_GA':
                 if add_adv:
                     assert grad_mask is not None
                     grad_mask = grad_mask.detach()
@@ -35,9 +34,6 @@ class NoisyCNNModule(nn.Module):
                     with torch.no_grad():
                         sgn_mask = grad_mask.data.sign()
 
-                        #alpha_coeff = 0.1*torch.max(torch.abs(x - self.buffer_h).view(x.shape[0], -1), dim=1).values
-                        #shape = sgn_mask.shape
-                        #alpha_coeff = alpha_coeff.view(-1,1,1,1).repeat([1,shape[1],shape[2],shape[3]])
                     adv_noise = sgn_mask * self.eta * self.alpha_coeff
                     if self.input:
                         adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
@@ -46,10 +42,9 @@ class NoisyCNNModule(nn.Module):
                     x_hat = x + adv_noise
                     return x_hat
                 else:
-                    self.buffer_h = x
                     return x
 
-            elif self.architecture == 'FGSM' or self.architecture == 'FGSM_GA' or self.architecture == 'advGNI_GA':
+            elif self.architecture == 'FGSM' or self.architecture == 'FGSM_GA':
                 if add_adv and self.input:
                     grad_mask = grad_mask.detach()
 
@@ -83,23 +78,6 @@ class NoisyCNNModule(nn.Module):
                         self.delta = self.delta.detach()
                         x_hat = x + self.delta[:x.size(0)]
                         return x_hat
-                else:
-                    return x
-            elif self.architecture == 'PGD_hidden':
-                if not self.input:
-                    if add_adv:
-                        assert grad_mask is not None
-                        grad_mask = grad_mask.detach()
-
-                        with torch.no_grad():
-                            sgn_mask = grad_mask.data.sign()
-
-                        adv_noise = sgn_mask * self.eta * self.alpha_coeff
-                        adv_noise = adv_noise.detach()
-                        x_hat = x + adv_noise
-                        return x_hat
-                    else:
-                        return x
                 else:
                     return x
             else:

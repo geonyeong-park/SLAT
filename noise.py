@@ -34,6 +34,8 @@ class GenByNoise(object):
         self.dataset = dataset
         self.data_name = config['dataset']['name']
         self.num_cls = config['dataset'][self.data_name]['num_cls']
+        self.batch_size = config['dataset'][self.data_name]['batch_size']
+        self.input_size = config['dataset'][self.data_name]['input_size']
         self.structure = config['model']['baseline']
 
         network = config['model'][self.data_name]
@@ -49,14 +51,16 @@ class GenByNoise(object):
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
-        self._get_optimizer()
         self.epochs = self.config['train']['num_epochs']
+        self._get_optimizer()
 
         self.log_loss = {}
         self.log_loss['val_acc'] = []
         self.log_loss['val_loss'] = []
+        self.log_loss['val_cos'] = []
+        self.log_loss['val_norm'] = []
         self.log_loss['training_time'] = 0.
-        self.val_epoch = 1
+        self.val_epoch = 10 if self.structure != 'Free' else 1
 
         self.tsne = TSNE(n_components=2, perplexity=20, init='pca', n_iter=3000)
 
@@ -71,6 +75,13 @@ class GenByNoise(object):
             self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
             self.epochs = 50
             print('load ckpt for CURE')
+        if config['model']['baseline'] == 'Free':
+            self.replay = config['model']['Free']['replay']
+            self.delta = torch.zeros(self.batch_size, 3, self.input_size, self.input_size).to('cuda')
+            self.delta.requires_grad = True
+            self.epochs = int(self.epochs/self.replay)
+            step1, step2, step3 = int(self.epochs*0.3), int(self.epochs*0.6), int(self.epochs*0.8)
+            self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
 
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -82,7 +93,8 @@ class GenByNoise(object):
 
         self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr'][self.data_name],
                                          weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
-        self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
+        step1, step2, step3 = int(self.epochs*0.3), int(self.epochs*0.6), int(self.epochs*0.8)
+        self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
 
     def pretrain(self):
         """For CURE"""
@@ -120,28 +132,18 @@ class GenByNoise(object):
             training_time += end - start
 
             if (e+1) % self.val_epoch == 0:
-                self.model.eval()
-                self._validation(e, n_iter, advattack=False)
-
-            if n_iter % self.config['exp_setting']['log_every_n_steps'] == 0:
-                self.writer.add_scalar('lr/theta', self.theta_scheduler.get_lr()[0], global_step=n_iter)
-
-            if (e+1) % self.config['exp_setting']['save_every_n_epochs'] == 0:
-                print('taking snapshot ...')
-                torch.save({
-                    'model': self.model.state_dict(),
-                }, os.path.join(self.snapshot_dir, 'pretrain_'+str(e+1)+'.pth'))
-
-                with open(sample_path.format(e+1), 'wb') as f:
-                    self.log_loss['training_time'] = training_time
-                    pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
-
-            if (e+1) % 10 == 0:
+                print('Training time: {}'.format(training_time))
                 self._validation(e, n_iter, advattack=True)
 
+        print('Training Finished.')
+        print('taking snapshot ...')
+        torch.save({
+            'model': self.model.state_dict(),
+        }, os.path.join(self.snapshot_dir, 'pretrain.pth'))
 
-        print('Training Finished. Checking adversarial robustness...')
-        self._validation(e, n_iter, advattack=True)
+        with open(sample_path.format(e+1), 'wb') as f:
+            self.log_loss['training_time'] = training_time
+            pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
         print('Finished, elapsed time: {}'.format(training_time))
 
     def _train_epoch(self, epoch, n_iter):
@@ -185,6 +187,19 @@ class GenByNoise(object):
                     reg.backward()
 
                 self.opt_theta.step()
+
+            elif self.structure == 'Free':
+                for _ in range(self.replay):
+                    output = self.model(x + self.delta[:x.size(0)])
+                    loss = self.cen(output, y)
+                    self.opt_theta.zero_grad()
+                    loss.backward()
+
+                    grad = self.delta.grad.detach()
+                    self.delta.data = clamp(self.delta + self.epsilon * torch.sign(grad), -self.epsilon, self.epsilon)
+                    self.delta.data[:x.size(0)] = clamp(self.delta[:x.size(0)], lower_limit-x, upper_limit-x)
+                    self.opt_theta.step()
+                    self.delta.grad.zero_()
 
             elif self.structure == 'CURE':
                 x.requires_grad = True
@@ -252,19 +267,13 @@ class GenByNoise(object):
                 loss.backward()
                 self.opt_theta.step()
 
-            elif self.structure == 'PGD' or self.structure == 'PGD_hidden':
+            elif self.structure == 'PGD':
                 # Code is partially from
                 # https://github.com/locuslab/fast_adversarial/blob/master/CIFAR10/train_pgd.py
                 delta = torch.zeros_like(x).to('cuda')
                 delta.requires_grad = True
                 for i in range(self.config['model']['PGD']['iters']):
-                    if self.structure == 'PGD_hidden':
-                        add_adv = False if i == 0 else True
-                        hook = True
-                    else:
-                        add_adv, hook = False, False
-
-                    output = self.model(x + delta, hook=hook, add_adv=add_adv)
+                    output = self.model(x + delta)
                     loss = self.cen(output, y)
                     loss.backward()
 
@@ -273,12 +282,7 @@ class GenByNoise(object):
                     delta.data = clamp(delta, lower_limit - x, upper_limit - x)
                     delta.grad.zero_()
                 delta = delta.detach()
-                if self.structure == 'PGD_hidden':
-                    hook = False
-                    add_adv = True
-                else:
-                    hook, add_adv = False, False
-                output = self.model(x + delta, hook=hook, add_adv=add_adv)
+                output = self.model(x + delta)
                 loss = self.cen(output, y)
                 self.opt_theta.zero_grad()
                 loss.backward()
@@ -330,45 +334,88 @@ class GenByNoise(object):
         return loss
 
     def _validation(self, epoch, n_iter, record=True, advattack=False, attack_iters=7, restarts=1):
-        with torch.no_grad():
+        self.model.eval()
+
+        valid_loss = 0.
+        valid_acc = 0.
+        valid_cos = 0.
+        valid_norm = {
+            'input': 0.,
+            'conv1': 0.,
+            'block1': 0.,
+            'block2': 0.,
+            'block3': 0.
+        }
+        counter = 0
+
+        for x, y in self.valid_loader:
+            x = x.to(self.device)
+            y = y.long().to(self.device)
+
+            # Computing validation accuracy and loss
+            if advattack:
+                with torch.enable_grad():
+                    pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, attack_iters, restarts)
+                with torch.no_grad():
+                    logit = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
+            else:
+                logit = self.model(x)
+            loss = self.cen(logit, y)
+            valid_loss += loss.data.cpu().numpy()
+
+            pred = logit.data.max(1)[1]
+            valid_acc += pred.eq(y.data).cpu().sum()
+
+            k = y.data.size()[0]
+            counter += k
+
+            # Computing cosine similarity
             self.model.eval()
+            x.requires_grad = True
 
-            valid_loss = 0.
-            valid_acc = 0.
-            counter = 0
+            logit = self.model(x)
+            loss_ = self.cen(logit, y)
+            loss_.backward()
+            grad = x.grad.data
 
-            for x, y in self.valid_loader:
-                x = x.to(self.device)
-                y = y.long().to(self.device)
+            delta = torch.zeros(x.shape).cuda()
+            for j in range(len(self.epsilon)):
+                delta[:, j, :, :].uniform_(-self.epsilon[j][0][0].item(), self.epsilon[j][0][0].item())
+                delta.data = clamp(delta, lower_limit - x, upper_limit - x)
+            delta.requires_grad = True
 
-                if advattack:
-                    with torch.enable_grad():
-                        pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, attack_iters, restarts)
-                    with torch.no_grad():
-                        logit = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
-                else:
-                    logit = self.model(x)
-                loss = self.cen(logit, y)
-                valid_loss += loss.data.cpu().numpy()
+            delta_output = self.model(x + delta)
+            delta_loss = self.cen(delta_output, y)
 
-                pred = logit.data.max(1)[1]
-                valid_acc += pred.eq(y.data).cpu().sum()
+            adv_grad = torch.autograd.grad(delta_loss, delta, create_graph=True)[0]
+            cos = cosine_similarity(grad, adv_grad)
+            valid_cos += cos.data.cpu().numpy()
+            # ------------------------------------------------------------------
+            # Computing ||grad||
 
-                k = y.data.size()[0]
-                counter += k
+            logit = self.model(x, hook=True)
+            loss = self.cen(logit, y)
+            loss.backward()
+            for k in self.model.grads.keys():
+                if not k == 'input': grad = self.model.grads[k]
+                valid_norm[k] = torch.mean(grad.view(grad.shape[0], -1).norm(p=1, dim=1)).data.cpu().numpy()
 
-            valid_loss /= counter
-            valid_acc /= counter
+        num_batch = len(self.valid_loader)
+        valid_loss /= counter
+        valid_acc /= counter
+        valid_cos /= num_batch
+        for k in self.model.grads.keys(): valid_norm[k] = valid_norm[k] / num_batch
 
-            if record:
-                self.writer.add_scalar('valid/loss', valid_loss, global_step=n_iter)
-                self.writer.add_scalar('valid/acc', valid_acc, global_step=n_iter)
+        if advattack:
             self.log_loss['val_loss'].append(valid_loss)
             self.log_loss['val_acc'].append(valid_acc)
+            self.log_loss['val_cos'].append(valid_cos)
+            self.log_loss['val_norm'].append(valid_norm)
 
         if epoch == None: epoch='Test'
-        print('[{}/{}/PGD attack {}]: Acc={:.5f}, Loss={:.3f}, LR={:.5f}'.format(epoch, n_iter, advattack,
-                                                       valid_acc, valid_loss, self.theta_scheduler.get_lr()[0]))
+        print('[{}/{}/PGD attack {}]: Acc={:.5f}, Loss={:.3f}, Cos={:.2f}, LR={:.5f}'.format(epoch, n_iter, advattack,
+                                                       valid_acc, valid_loss, valid_cos, self.theta_scheduler.get_lr()[0]))
+        print(valid_norm)
 
     def test(self, checkpoint, mode):
         self.model.load_state_dict(checkpoint['model'])
