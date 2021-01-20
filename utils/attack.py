@@ -35,7 +35,7 @@ def attack_pgd(model, X, y, epsilon, alpha, attack_iters, restarts, opt=None):
         max_loss = torch.max(max_loss, all_loss)
     return max_delta
 
-def attack_FGSM(model, x, y, epsilon):
+def attack_FGSM(model, x, y, epsilon, clamp_=True):
     x.requires_grad = True
     logit_clean = model(x)
     loss = nn.CrossEntropyLoss()(logit_clean, y)
@@ -48,7 +48,8 @@ def attack_FGSM(model, x, y, epsilon):
         sgn_mask = grad.data.sign()
 
     adv_noise = sgn_mask * epsilon
-    adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
+    if clamp_:
+        adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
     adv_noise = adv_noise.detach()
 
     return adv_noise

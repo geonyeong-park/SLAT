@@ -1,0 +1,105 @@
+import scipy.misc
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from matplotlib.colors import LightSource
+from matplotlib import cm
+import pickle as pkl
+import argparse
+import torch
+import torch.nn as nn
+
+def compute_perturb(model, image, label, vec_x, vec_y, range_x, range_y,
+                 grid_size=50, loss=nn.CrossEntropyLoss(reduction='none'),
+                 batch_size=128):
+    rx = np.linspace(*range_x, grid_size)
+    ry = np.linspace(*range_y, grid_size)
+
+    images = []
+    loss_list = []
+
+    image = image.to('cuda')
+    label = label.to('cuda')
+    vec_x = vec_x.to('cuda')
+    vec_y = vec_y.to('cuda')
+
+    for j in ry :
+        for i in rx :
+            images.append(image + i*vec_x + j*vec_y)
+
+            if len(images) == batch_size :
+                images = torch.stack(images)
+                labels = torch.stack([label]*batch_size)
+                outputs = model(images)
+                loss_list.append(loss(outputs, labels).data.cpu().numpy())
+                images = []
+
+    images = torch.stack(images)
+    labels = torch.stack([label]*len(images))
+    outputs = model(images)
+    loss_list.append(loss(outputs, labels).data.cpu().numpy())
+    loss_list = np.concatenate(loss_list).reshape(len(rx), len(ry))
+
+    return rx, ry, loss_list
+
+def plot_perturb_plt(rx, ry, zs, save_path, eps,
+                     title=None, width=8, height=7, linewidth = 0.1,
+                     pane_color=(1.0, 1.0, 1.0, 0.0),
+                     tick_pad_x=0, tick_pad_y=0, tick_pad_z=1.5,
+                     xlabel=None, ylabel=None, zlabel=None,
+                     xlabel_rotation=0, ylabel_rotation=0, zlabel_rotation=0,
+                     view_azimuth=230, view_altitude=30,
+                     light_azimuth=315, light_altitude=45, light_exag=0) :
+
+    xs, ys = np.meshgrid(rx, ry)
+
+    fig = plt.figure(figsize=(width, height))
+    ax = fig.add_subplot(111, projection='3d')
+
+    if title is not None :
+        ax.set_title(title)
+
+    # The azimuth (0-360, degrees clockwise from North) of the light source. Defaults to 315 degrees (from the northwest).
+    # The altitude (0-90, degrees up from horizontal) of the light source. Defaults to 45 degrees from horizontal.
+
+    ls = LightSource(azdeg=light_azimuth, altdeg=light_altitude)
+    cmap = plt.get_cmap('bwr')
+    fcolors = ls.shade(zs, cmap=cmap, vert_exag=light_exag, blend_mode='soft')
+    surf = ax.plot_surface(xs, ys, zs, rstride=1, cstride=1, facecolors=fcolors,
+                           linewidth=linewidth, antialiased=True, shade=False)
+
+    #surf.set_edgecolor(edge_color)
+    ax.view_init(azim=view_azimuth, elev=view_altitude)
+
+    ax.xaxis.set_rotate_label(False)
+    ax.yaxis.set_rotate_label(False)
+    ax.zaxis.set_rotate_label(False)
+
+    if xlabel is not None :
+        ax.set_xlabel(xlabel, rotation=xlabel_rotation)
+    if ylabel is not None :
+        ax.set_ylabel(ylabel, rotation=ylabel_rotation)
+    if zlabel is not None :
+        ax.set_zlabel(zlabel, rotation=zlabel_rotation)
+
+    x_min, x_max = xs[0][0], xs[0][-1]
+    xtick_step = np.arange(x_min, x_max, step=5)
+    y_min, y_max = ys[0][0], ys[0][-1]
+    ytick_step = np.arange(y_min, y_max, step=5)
+
+    ax.set_xticks(xtick_step, ['{}'.format(int(eps*i)) for i in xtick_step])
+    ax.set_yticks(ytick_step, ['{}'.format(int(eps*i)) for i in ytick_step])
+    #ax.set_zticks()
+
+    ax.xaxis.set_pane_color(pane_color)
+    ax.yaxis.set_pane_color(pane_color)
+    ax.zaxis.set_pane_color(pane_color)
+
+    ax.tick_params(axis='x', pad=tick_pad_x)
+    ax.tick_params(axis='y', pad=tick_pad_y)
+    ax.tick_params(axis='z', pad=tick_pad_z)
+
+    plt.savefig(save_path, format='png', dpi=300)
+    print('saved loss landscape')

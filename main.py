@@ -7,6 +7,7 @@ from shutil import copyfile
 from solver import Solver
 from data.data_loader import DataWrapper
 import torch.backends.cudnn as cudnn
+from eval import eval
 
 def get_arguments():
     """Parse all the arguments provided from the CLI.
@@ -118,7 +119,7 @@ def main(config, args):
     if args.resume is None:
         solver.train()
     else:
-        solver.test(checkpoint)
+        eval(solver, checkpoint, config['model']['ResNet']['eta'])
 
 
 
