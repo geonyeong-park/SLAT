@@ -16,8 +16,8 @@ def eval(solver, checkpoint, eps):
     (2) Test adversarial robustness via FGSM, PGD, Blackbox attack
         - PGD: 50-10
     """
-    torch.manual_seed(0)
-    np.random.seed(0)
+    torch.manual_seed(1)
+    np.random.seed(1)
 
     solver.model.load_state_dict(checkpoint['model'])
     solver.model.eval()
@@ -59,29 +59,28 @@ def eval(solver, checkpoint, eps):
                                  loss=nn.CrossEntropyLoss(reduction='none'))
             print('computed adversarial loss landscape')
             plot_perturb_plt(rx, ry, zs, png_path, eps,
-                             title='{}_loss_landscape'.format(solver.structure),
-                             xlabel='Adv', ylabel='Rad', zlabel='loss')
+                             xlabel='Adv', ylabel='Rad',)
 
         # -------------------------
         # (2) Adversarial robustness test
         # -------------------------
-        pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
+        #pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
         FGSM_delta = attack_FGSM(solver.model, x, y, solver.epsilon)
 
-        pgd_logit = solver.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
+        #pgd_logit = solver.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
         FGSM_logit = solver.model(clamp(x + FGSM_delta[:x.size(0)], lower_limit, upper_limit))
 
-        pgd_loss = solver.cen(pgd_logit, y)
-        FGSM_loss = solver.cen(FGSM_loss, y)
+        #pgd_loss = solver.cen(pgd_logit, y)
+        FGSM_loss = solver.cen(FGSM_logit, y)
 
+        #loss['PGD'] += pgd_loss.data.cpu().numpy()
         loss['FGSM'] += FGSM_loss.data.cpu().numpy()
-        loss['PGD'] += pgd_loss.data.cpu().numpy()
 
-        pgd_pred = pgd_logit.data.max(1)[1]
+        #pgd_pred = pgd_logit.data.max(1)[1]
         FGSM_pred = FGSM_logit.data.max(1)[1]
 
+        #acc['PGD'] += pgd_pred.eq(y.data).cpu().sum()
         acc['FGSM'] += FGSM_pred.eq(y.data).cpu().sum()
-        acc['PGD'] += pgd_pred.eq(y.data).cpu().sum()
 
         k = y.data.size()[0]
         counter += k

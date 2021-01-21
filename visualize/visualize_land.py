@@ -46,7 +46,7 @@ def compute_perturb(model, image, label, vec_x, vec_y, range_x, range_y,
 
 def plot_perturb_plt(rx, ry, zs, save_path, eps,
                      title=None, width=8, height=7, linewidth = 0.1,
-                     pane_color=(1.0, 1.0, 1.0, 0.0),
+                     pane_color=(0.0, 0.0, 0.0, 0.01),
                      tick_pad_x=0, tick_pad_y=0, tick_pad_z=1.5,
                      xlabel=None, ylabel=None, zlabel=None,
                      xlabel_rotation=0, ylabel_rotation=0, zlabel_rotation=0,
@@ -65,10 +65,11 @@ def plot_perturb_plt(rx, ry, zs, save_path, eps,
     # The altitude (0-90, degrees up from horizontal) of the light source. Defaults to 45 degrees from horizontal.
 
     ls = LightSource(azdeg=light_azimuth, altdeg=light_altitude)
-    cmap = plt.get_cmap('bwr')
+    cmap = plt.get_cmap('coolwarm')
     fcolors = ls.shade(zs, cmap=cmap, vert_exag=light_exag, blend_mode='soft')
     surf = ax.plot_surface(xs, ys, zs, rstride=1, cstride=1, facecolors=fcolors,
-                           linewidth=linewidth, antialiased=True, shade=False)
+                           linewidth=linewidth, antialiased=True, shade=False, alpha=0.7)
+    contour = ax.contourf(xs, ys, zs, zdir='z', offset=np.min(zs), cmap=cmap)
 
     #surf.set_edgecolor(edge_color)
     ax.view_init(azim=view_azimuth, elev=view_altitude)
@@ -85,13 +86,15 @@ def plot_perturb_plt(rx, ry, zs, save_path, eps,
         ax.set_zlabel(zlabel, rotation=zlabel_rotation)
 
     x_min, x_max = xs[0][0], xs[0][-1]
-    xtick_step = np.arange(x_min, x_max, step=5)
-    y_min, y_max = ys[0][0], ys[0][-1]
-    ytick_step = np.arange(y_min, y_max, step=5)
+    xtick_step = np.linspace(x_min, x_max, 5)
+    y_min, y_max = ys[0][0], ys[-1][-1]
+    ytick_step = np.linspace(y_min, y_max, 5)
 
-    ax.set_xticks(xtick_step, ['{}'.format(int(eps*i)) for i in xtick_step])
-    ax.set_yticks(ytick_step, ['{}'.format(int(eps*i)) for i in ytick_step])
-    #ax.set_zticks()
+    ax.set_xticks(xtick_step)
+    ax.set_xticklabels(['{}'.format(int(eps*i)) for i in xtick_step])
+    ax.set_yticks(ytick_step)
+    ax.set_yticklabels(['{}'.format(int(eps*i)) for i in ytick_step])
+    #ax.set_zticks(None)
 
     ax.xaxis.set_pane_color(pane_color)
     ax.yaxis.set_pane_color(pane_color)
