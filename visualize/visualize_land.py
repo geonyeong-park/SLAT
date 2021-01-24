@@ -9,7 +9,10 @@ from matplotlib import cm
 import pickle as pkl
 import argparse
 import torch
+import torchvision
 import torch.nn as nn
+from utils.utils import clamp, lower_limit, upper_limit, std_t
+from utils.attack import attack_FGSM, attack_pgd
 
 def compute_perturb(model, image, label, vec_x, vec_y, range_x, range_y,
                  grid_size=50, loss=nn.CrossEntropyLoss(reduction='none'),
@@ -104,5 +107,53 @@ def plot_perturb_plt(rx, ry, zs, save_path, eps,
     ax.tick_params(axis='y', pad=tick_pad_y)
     ax.tick_params(axis='z', pad=tick_pad_z)
 
-    plt.savefig(save_path, format='png', dpi=300)
+    plt.savefig(save_path('loss_landscape'), format='png', dpi=300)
     print('saved loss landscape')
+
+def visualize_perturb(model, x, y, epsilon, step, iter, path):
+    adv_l2 = attack_l2(model, x, y, epsilon, step, iter)
+
+    save_img(adv_l2, path('adv_l2'))
+    save_img(x, path('original'))
+    print('Saved perturbation')
+
+    delta = adv_l2 - x
+    delta_norm = torch.mean(delta.view(delta.shape[0], -1).norm(p=1, dim=1)).data.cpu().numpy()
+    print('||delta||={}'.format(delta_norm))
+
+    logit = model(adv_l2)
+    pred = logit.data.max(1)[1]
+    acc = pred.eq(y.data).cpu().sum() / 128.
+
+    print('Acc={}'.format(acc))
+    return
+
+def attack_l2(model, x, y, epsilon, step, iter):
+    delta = torch.zeros_like(x).to('cuda')
+    delta.requires_grad = True
+    for i in range(iter):
+        output = model(x + delta)
+        loss = nn.CrossEntropyLoss()(output, y)
+        loss.backward()
+
+        grad = delta.grad.detach()
+        g_norm = grad.view(grad.shape[0], -1).norm(p=2,dim=1).detach()
+        grad = grad / g_norm.view(-1,1,1,1)
+
+        delta.data = clamp(delta + step*grad, lower_limit - x, upper_limit - x)
+        delta.data = clamp_l2_norm(delta, epsilon)
+        delta.grad.zero_()
+    delta = delta.detach()
+    adversary = x+delta
+    return adversary
+
+def clamp_l2_norm(delta, epsilon):
+    norm_delta = delta.view(delta.shape[0], -1).norm(p=2,dim=1).detach()
+    norm_clamped = torch.clamp(norm_delta, max=epsilon)
+    delta_ = delta / norm_delta.view(-1,1,1,1) * norm_clamped.view(-1,1,1,1)
+    return delta_
+
+
+def save_img(tensor, path, ncols=8):
+    img = torchvision.utils.make_grid(tensor.detach().cpu(), nrow=ncols, normalize=True)
+    torchvision.utils.save_image(img, path)

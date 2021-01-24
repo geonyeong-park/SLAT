@@ -45,14 +45,18 @@ class NetworkBlock(nn.Module):
         return self.layer(x)
 
 class WideResNet(nn.Module):
-    def __init__(self, config, depth=28, widen_factor=10, dropRate=0.0, fc_input_dim_scale=1):
+    def __init__(self, config, depth=28, widen_factor=10, dropRate=0.0, fc_input_dim_scale=1, eta=None):
         super(WideResNet, self).__init__()
 
         self.config = config
         self.data_name = config['dataset']['name']
         num_classes = config['dataset'][self.data_name]['num_cls']
         self.architecture = config['model']['baseline']
-        self.eta = self.config['model']['ResNet']['eta']
+
+        if eta is None:
+            self.eta = self.config['model']['ResNet']['eta']
+        else:
+            self.eta = eta
 
         nChannels = [16, 16*widen_factor, 32*widen_factor, 64*widen_factor]
         assert (depth - 4) % 6 == 0, 'depth should be 6n+4'
@@ -116,7 +120,7 @@ class WideResNet(nn.Module):
             self.grads[name] = grad
         return hook
 
-    def forward(self, x, add_adv=False, hook=False):
+    def forward(self, x, add_adv=False, hook=False, return_accum=False):
         x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv)
 
         h = self.conv1(x_hat)
@@ -138,12 +142,16 @@ class WideResNet(nn.Module):
         if hook:
             h.register_hook(self.save_grad('block3'))
         h = self.noisy_module['block3'](h, self.grads['block3'], add_adv)
+        accum = h
         #print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
 
         out = self.relu(self.bn1(h))
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.nChannels)
-        return self.fc(out)
+        if not return_accum:
+            return self.fc(out)
+        else:
+            return self.fc(out), accum
 
 def WideResNet28_10(config):
     model = WideResNet(config, depth=28, widen_factor=10, dropRate=0.3)

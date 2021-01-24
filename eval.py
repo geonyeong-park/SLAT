@@ -7,23 +7,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils.attack import attack_FGSM, attack_pgd
 from utils.utils import clamp, lower_limit, upper_limit
-from visualize.visualize_land import compute_perturb, plot_perturb_plt
+from visualize.visualize_land import compute_perturb, plot_perturb_plt, visualize_perturb
 
 
 def eval(solver, checkpoint, eps):
     """
     (1) Visualize loss landscape
+    (2) Visualize accumulated penultimate feature
     (2) Test adversarial robustness via FGSM, PGD, Blackbox attack
         - PGD: 50-10
     """
-    torch.manual_seed(1)
-    np.random.seed(1)
+    torch.manual_seed(10)
+    np.random.seed(10)
 
     solver.model.load_state_dict(checkpoint['model'])
     solver.model.eval()
     solver.model.to('cuda')
 
-    png_path = os.path.join(solver.log_dir, 'loss_landscape.png')
+    png_path = lambda x: os.path.join(solver.log_dir, '{}.png'.format(x))
 
     acc = {
         'FGSM': 0.,
@@ -44,7 +45,7 @@ def eval(solver, checkpoint, eps):
         # -------------------------
         # (1) Visualize loss landscape
         # -------------------------
-        if i == 0:
+        if i == 2:
             adv_vec = attack_FGSM(solver.model, x, y, solver.epsilon, clamp_=False)
             adv_vec = adv_vec[0]
             rademacher_vec = 2.*(torch.randint(2, size=adv_vec.shape)-1.) * solver.epsilon.data.cpu()
@@ -62,24 +63,29 @@ def eval(solver, checkpoint, eps):
                              xlabel='Adv', ylabel='Rad',)
 
         # -------------------------
-        # (2) Adversarial robustness test
+        # (2) Visualize accumulated perturbation
         # -------------------------
-        pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
+            visualize_perturb(solver.model, x, y, 20, 1.5, 50, png_path)
+
+        # -------------------------
+        # (3) Adversarial robustness test
+        # -------------------------
+        #pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
         FGSM_delta = attack_FGSM(solver.model, x, y, solver.epsilon)
 
-        pgd_logit = solver.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
+        #pgd_logit = solver.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
         FGSM_logit = solver.model(clamp(x + FGSM_delta[:x.size(0)], lower_limit, upper_limit))
 
-        pgd_loss = solver.cen(pgd_logit, y)
+        #pgd_loss = solver.cen(pgd_logit, y)
         FGSM_loss = solver.cen(FGSM_logit, y)
 
-        loss['PGD'] += pgd_loss.data.cpu().numpy()
+        #loss['PGD'] += pgd_loss.data.cpu().numpy()
         loss['FGSM'] += FGSM_loss.data.cpu().numpy()
 
-        pgd_pred = pgd_logit.data.max(1)[1]
+        #pgd_pred = pgd_logit.data.max(1)[1]
         FGSM_pred = FGSM_logit.data.max(1)[1]
 
-        acc['PGD'] += pgd_pred.eq(y.data).cpu().sum()
+        #acc['PGD'] += pgd_pred.eq(y.data).cpu().sum()
         acc['FGSM'] += FGSM_pred.eq(y.data).cpu().sum()
 
         k = y.data.size()[0]
