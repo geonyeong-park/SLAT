@@ -13,16 +13,19 @@ class basemodel(nn.Module):
         self.epsilon = epsilon
 
         self.sigmoid = nn.Sigmoid()
-        self.fc = nn.Linear(2, n_hidden)
-        self.logit = nn.Linear(n_hidden, 1, bias=False)
+        self.fc = nn.Linear(2, n_hidden, bias=False)
+        self.logit = nn.Linear(n_hidden, 1)
 
         self.noisy_module = nn.ModuleDict({
             'input': HiddenPerturb(self.architecture, self.epsilon, 1., True),
-            'fc': HiddenPerturb(self.architecture, self.epsilon, 3.5),
+            'fc': HiddenPerturb(self.architecture, self.epsilon, 0.9),
         })
-        # epsilon=0.1, alpha_1=1., alpha_2=3.5
-        # FGSM=96.69%, advGNI=94.19%
+        # epsilon=0.1, n=512:: alpha_1=1., alpha_2=3.5, FGSM=96.69%, advGNI=94.19% (bias False:
+        # 95.90%)
+        # epsilon=0.1, n=32 :: alpha_1=1., alpha_2=1., bias all False, FGSM=95.5%, base=95.69%,
+        # advGNI=95.59%
         # python3 gaussian_test.py --gpu 2 --n_hidden 512 --architecture advGNI --epsilon 0.1
+        # n=256: alpha_2=0.4, 128: 0.5, 64: 0.9, 16:0.9
 
         self.grads = {
             'input': None,
@@ -43,6 +46,7 @@ class basemodel(nn.Module):
         if hook:
             h.register_hook(self.save_grad('fc'))
         h = self.noisy_module['fc'](h, self.grads['fc'], add_adv)
+        self.feature = h
 
         out = self.logit(h).view(h.shape[0])
         return out

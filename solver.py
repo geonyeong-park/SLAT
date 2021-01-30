@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
+from torch.optim.lr_scheduler import MultiStepLR, CyclicLR
 import os
 import shutil
 import sys
@@ -48,6 +49,13 @@ class Solver(object):
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
         self.epochs = self.config['train']['num_epochs']
+
+        if config['model']['baseline'] == 'Free':
+            self.replay = config['model']['Free']['replay']
+            self.delta = torch.zeros(self.batch_size, 3, self.input_size, self.input_size).to('cuda')
+            self.delta.requires_grad = True
+            self.epochs = int(self.epochs/self.replay)
+
         self._get_optimizer()
 
         self.log_loss = {}
@@ -62,20 +70,6 @@ class Solver(object):
         self.epsilon = (eta/ 255.) / std_t
         self.pgd_alpha = (eta*0.25 / 255.) / std_t
 
-        if config['model']['baseline'] == 'CURE':
-            checkpoint = torch.load('snapshots/ongoing_CURE_wideresnet/pretrain.pth')
-            self.model.load_state_dict(checkpoint['model'])
-            self.opt_theta = torch.optim.Adam(self.model.parameters(), lr=1e-4)
-            self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [60,120,160], 0.1)
-            self.epochs = 50
-            print('load ckpt for CURE')
-        if config['model']['baseline'] == 'Free':
-            self.replay = config['model']['Free']['replay']
-            self.delta = torch.zeros(self.batch_size, 3, self.input_size, self.input_size).to('cuda')
-            self.delta.requires_grad = True
-            self.epochs = int(self.epochs/self.replay)
-            step1, step2, step3 = int(self.epochs*0.3), int(self.epochs*0.6), int(self.epochs*0.8)
-            self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
 
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -85,10 +79,16 @@ class Solver(object):
     def _get_optimizer(self):
         opt_param = self.config['optimizer']
 
-        self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr'][self.data_name],
-                                         weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
-        step1, step2, step3 = int(self.epochs*0.3), int(self.epochs*0.6), int(self.epochs*0.8)
-        self.theta_scheduler = torch.optim.lr_scheduler.MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
+        if opt_param['schedule'] == 'multistep':
+            self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['multistep'],
+                                            weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
+            milestone = opt_param['lr_milestone']
+            step1, step2, step3 = int(self.epochs*milestone[0]), int(self.epochs*milestone[1]), int(self.epochs*milestone[2])
+            self.theta_scheduler = MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
+        elif opt_param['schedule'] == 'cyclic':
+            lr_steps = self.epochs * len(self.train_loader)
+            self.theta_scheduler = CyclicLR(self.opt_theta, 0., opt_param['lr']['cyclic'],
+                                            step_size_up=lr_steps/2., step_size_down=lr_steps/2.)
 
     def pretrain(self):
         """For CURE"""
@@ -195,32 +195,6 @@ class Solver(object):
                     self.opt_theta.step()
                     self.delta.grad.zero_()
 
-            elif self.structure == 'CURE':
-                x.requires_grad = True
-                logit_clean = self.model(x)
-                loss = self.cen(logit_clean, y)
-
-                loss.backward()
-                grad = x.grad.data
-                z = torch.sign(grad).detach() + 0.
-                h = min(1.5, 0.3*(epoch+1))
-                z = h*z / z.view(z.shape[0], -1).norm(dim=1)[:,None,None,None]
-
-                self.opt_theta.zero_grad()
-                self.model.zero_grad()
-
-                logit_hz = self.model(x+z)
-                loss_hz = self.cen(logit_hz, y)
-                grad_z = torch.autograd.grad(loss_hz, x, create_graph=True)[0]
-                grad_diff = grad - grad_z
-
-                reg = torch.mean(grad_diff.view(grad_diff.shape[0], -1).norm(dim=1))
-
-                loss = self.cen(self.model(x), y)
-                loss = loss + self.config['model']['CURE']['gamma']*reg
-                loss.backward()
-                self.opt_theta.step()
-
             elif self.structure == 'FGSM' or self.structure == 'FGSM_GA':
                 x.requires_grad = True
                 logit_clean = self.model(x)
@@ -283,7 +257,8 @@ class Solver(object):
 
             else:
                 self.opt_theta.zero_grad()
-                loss = self._step(self.model, x, y)
+                logit_clean = self.model(x)
+                loss = self.cen(logit_clean, y)
                 loss.backward()
                 self.opt_theta.step()
 

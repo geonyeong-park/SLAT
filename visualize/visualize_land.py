@@ -112,20 +112,11 @@ def plot_perturb_plt(rx, ry, zs, save_path, eps,
 
 def visualize_perturb(model, x, y, epsilon, step, iter, path):
     adv_l2 = attack_l2(model, x, y, epsilon, step, iter)
-
-    save_img(adv_l2, path('adv_l2'))
+    delta_norm = adv_l2.view(adv_l2.shape[0], -1).norm(p=2, dim=1).data.cpu().numpy()
+    save_img(adv_l2, path('perturbed'))
     save_img(x, path('original'))
-    print('Saved perturbation')
 
-    delta = adv_l2 - x
-    delta_norm = torch.mean(delta.view(delta.shape[0], -1).norm(p=1, dim=1)).data.cpu().numpy()
-    print('||delta||={}'.format(delta_norm))
-
-    logit = model(adv_l2)
-    pred = logit.data.max(1)[1]
-    acc = pred.eq(y.data).cpu().sum() / 128.
-
-    print('Acc={}'.format(acc))
+    print('mean ||delta||={}'.format(np.mean(delta_norm)))
     return
 
 def attack_l2(model, x, y, epsilon, step, iter):
@@ -144,8 +135,8 @@ def attack_l2(model, x, y, epsilon, step, iter):
         delta.data = clamp_l2_norm(delta, epsilon)
         delta.grad.zero_()
     delta = delta.detach()
-    adversary = x+delta
-    return adversary
+    #adversary = x+delta
+    return delta
 
 def clamp_l2_norm(delta, epsilon):
     norm_delta = delta.view(delta.shape[0], -1).norm(p=2,dim=1).detach()

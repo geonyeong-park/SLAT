@@ -170,6 +170,36 @@ def eval(n_hidden_list):
 
     fig_bdry.savefig('log/gaussian_test/bdry_{}_{}to{}.png'.format(architecture, n_hidden_list[0], n_hidden_list[-1]))
 
+    _ = encoder(X)
+    feature_clean = encoder.feature.clone().detach()
+    X_non_robust = X
+    X_non_robust[:,-1] += epsilon
+    _ = encoder(X_non_robust)
+    feature_adv = encoder.feature.clone().detach()
+
+    feature_delta = torch.mean(torch.abs(feature_clean-feature_adv), 0).data.cpu().numpy()
+    arg = feature_delta.argsort()
+    print(feature_delta[arg])
+
+
+    """
+    corr = torch.mean(torch.abs(encoder.feature * Y.view(n_samples, 1)), 0).data.cpu().numpy()
+    arg = corr.argsort()
+    corr_sort = corr[arg]
+    print(corr_sort)
+    feature = encoder.feature.data.cpu().numpy()
+    Xw = feature*w
+    Xw_sort = Xw[:, arg]
+    Xw_sort_0, Xw_sort_1 = Xw_sort[Y.data.cpu().numpy()==0.], Xw_sort[Y.data.cpu().numpy()==1.]
+    Xw_sort_0 = np.cumsum(Xw_sort_0,1).mean(0)
+    Xw_sort_1 = np.cumsum(Xw_sort_1,1).mean(0)
+
+    fig, ax = plt.subplots(1,1)
+    ax.plot(np.array([x for x in range(n_hidden_list[-1])]), Xw_sort_1-Xw_sort_0)
+    #ax.plot(np.array([x for x in range(n_hidden_list[-1])]), Xw_sort_0)
+    fig.savefig('log/gaussian_test/{}_{}_contribution.png'.format(architecture, n_hidden_list[-1]))
+    print('save figure')
+    """
 
 if __name__ == '__main__':
     if args.eval:

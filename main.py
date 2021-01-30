@@ -38,6 +38,8 @@ def get_arguments():
     parser.add_argument("--GA_coeff", default=None, type=float, required=False, help="")
     parser.add_argument("--num_epochs", type=int, default=None,
                         required=False, help="")
+    parser.add_argument("--lr_milestone", type=float, nargs='+', default=None, required=False, help=".")
+    parser.add_argument("--lr", type=float, default=None, required=False, help=".")
 
     return parser.parse_args()
 
@@ -103,6 +105,13 @@ def main(config, args):
     if args.num_epochs is not None:
         print('epochs: ', args.num_epochs)
         config['train']['num_epochs'] = args.num_epochs
+    if args.lr_milestone is not None:
+        print('LR milestones: ', args.lr_milestone)
+        config['optimizer']['lr_milestone'] = args.lr_milestone
+    if args.lr is not None:
+        print('LR: ', args.lr)
+        s = config['optimizer']['schedule']
+        config['optimizer']['lr'][s] = args.lr
 
     with open(os.path.join(log_dir, 'config.yaml'), 'w') as f:
         yaml.dump(config, f)
