@@ -9,7 +9,7 @@ import shutil
 import sys
 import pickle as pkl
 from timeit import default_timer as timer
-from math import sqrt
+from math import sqrt, ceil
 import numpy as np
 
 import advertorch
@@ -83,7 +83,7 @@ class Solver(object):
             self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['multistep'],
                                             weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
             milestone = opt_param['lr_milestone']
-            step1, step2, step3 = int(self.epochs*milestone[0]), int(self.epochs*milestone[1]), int(self.epochs*milestone[2])
+            step1, step2, step3 = ceil(self.epochs*milestone[0]), ceil(self.epochs*milestone[1]), ceil(self.epochs*milestone[2])
             self.theta_scheduler = MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
         elif opt_param['schedule'] == 'cyclic':
             lr_steps = self.epochs * len(self.train_loader)
@@ -253,6 +253,24 @@ class Solver(object):
                 logit = self.model(x, add_adv=True)
                 loss = self.cen(logit, y)
                 loss.backward()
+                self.opt_theta.step()
+
+            elif self.structure == 'GradPenal':
+                x.requires_grad = True
+                logit = self.model(x)
+                loss = self.cen(logit, y)
+
+                loss.backward()
+                grad = x.grad.clone().data
+
+                self.opt_theta.zero_grad()
+                logit_adv = self.model(x, add_adv=True)
+
+                # Main loss with adversarial example
+                theta_loss = self.cen(logit_adv, y)
+                grad_norm = torch.mean(grad.view(grad.shape[0], -1).norm(p=2, dim=1))
+                theta_loss += self.config['model']['GradPenal']['lambd']*grad_norm
+                theta_loss.backward()
                 self.opt_theta.step()
 
             else:
