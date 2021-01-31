@@ -48,9 +48,10 @@ class Solver(object):
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()
         self.cen = nn.CrossEntropyLoss()
-        self.epochs = self.config['train']['num_epochs']
+        self.schedule = self.config['optimizer']['schedule']
+        self.epochs = self.config['train']['num_epochs'][self.schedule]
 
-        if config['model']['baseline'] == 'Free':
+        if self.structure == 'Free':
             self.replay = config['model']['Free']['replay']
             self.delta = torch.zeros(self.batch_size, 3, self.input_size, self.input_size).to('cuda')
             self.delta.requires_grad = True
@@ -79,14 +80,19 @@ class Solver(object):
     def _get_optimizer(self):
         opt_param = self.config['optimizer']
 
-        if opt_param['schedule'] == 'multistep':
+        if self.schedule == 'multistep':
             self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['multistep'],
                                             weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
             milestone = opt_param['lr_milestone']
             step1, step2, step3 = ceil(self.epochs*milestone[0]), ceil(self.epochs*milestone[1]), ceil(self.epochs*milestone[2])
             self.theta_scheduler = MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
-        elif opt_param['schedule'] == 'cyclic':
-            lr_steps = self.epochs * len(self.train_loader)
+        elif self.schedule == 'cyclic':
+            self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['cyclic'],
+                                            weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
+            if self.structure != 'Free':
+                lr_steps = self.epochs * len(self.train_loader)
+            else:
+                lr_steps = self.epochs * len(self.train_loader) * self.replay
             self.theta_scheduler = CyclicLR(self.opt_theta, 0., opt_param['lr']['cyclic'],
                                             step_size_up=lr_steps/2., step_size_down=lr_steps/2.)
 
@@ -181,6 +187,7 @@ class Solver(object):
                     reg.backward()
 
                 self.opt_theta.step()
+                if self.schedule == 'cyclic': self.theta_scheduler.step()
 
             elif self.structure == 'Free':
                 for _ in range(self.replay):
@@ -194,6 +201,7 @@ class Solver(object):
                     self.delta.data[:x.size(0)] = clamp(self.delta[:x.size(0)], lower_limit-x, upper_limit-x)
                     self.opt_theta.step()
                     self.delta.grad.zero_()
+                    if self.schedule == 'cyclic': self.theta_scheduler.step()
 
             elif self.structure == 'FGSM' or self.structure == 'FGSM_GA':
                 x.requires_grad = True
@@ -222,6 +230,7 @@ class Solver(object):
                 loss += reg
                 loss.backward()
                 self.opt_theta.step()
+                if self.schedule == 'cyclic': self.theta_scheduler.step()
 
             elif self.structure == 'PGD':
                 # Code is partially from
@@ -243,6 +252,7 @@ class Solver(object):
                 self.opt_theta.zero_grad()
                 loss.backward()
                 self.opt_theta.step()
+                if self.schedule == 'cyclic': self.theta_scheduler.step()
 
             elif self.structure == 'FGSM_RS':
                 logit = self.model(x)
@@ -254,6 +264,7 @@ class Solver(object):
                 loss = self.cen(logit, y)
                 loss.backward()
                 self.opt_theta.step()
+                if self.schedule == 'cyclic': self.theta_scheduler.step()
 
             elif self.structure == 'GradPenal':
                 x.requires_grad = True
@@ -279,10 +290,11 @@ class Solver(object):
                 loss = self.cen(logit_clean, y)
                 loss.backward()
                 self.opt_theta.step()
+                if self.schedule == 'cyclic': self.theta_scheduler.step()
 
             n_iter += 1
 
-        self.theta_scheduler.step()
+        if self.schedule == 'multistep': self.theta_scheduler.step()
 
         x,y = first_batch
 

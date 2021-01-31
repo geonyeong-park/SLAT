@@ -54,7 +54,9 @@ model:
     lambd: 10000
 
 train:
-  num_epochs: 200
+  num_epochs:
+    multistep: 200
+    cyclic: 16
 optimizer:
   momentum: 0.9
   schedule: multistep #multistep, cyclic

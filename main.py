@@ -39,6 +39,7 @@ def get_arguments():
     parser.add_argument("--num_epochs", type=int, default=None,
                         required=False, help="")
     parser.add_argument("--lr_milestone", type=float, nargs='+', default=None, required=False, help=".")
+    parser.add_argument("--schedule", type=str, default=None, required=False, help=".")
     parser.add_argument("--lr", type=float, default=None, required=False, help=".")
 
     return parser.parse_args()
@@ -84,6 +85,10 @@ def main(config, args):
         assert structure in config['model']['baseline']
         print('model: ', structure)
         config['model']['baseline'] = structure
+    if args.schedule is not None:
+        print('LR schedule: ', args.schedule)
+        assert args.schedule == 'cyclic' or args.schedule == 'multistep'
+        config['optimizer']['schedule'] = args.schedule
     if args.resume is not None:
         checkpoint = torch.load(args.resume)
         print('load {}'.format(args.resume))
@@ -104,7 +109,8 @@ def main(config, args):
         config['model']['FGSM_GA']['coeff'] = args.GA_coeff
     if args.num_epochs is not None:
         print('epochs: ', args.num_epochs)
-        config['train']['num_epochs'] = args.num_epochs
+        s = config['optimizer']['schedule']
+        config['train']['num_epochs'][s] = args.num_epochs
     if args.lr_milestone is not None:
         print('LR milestones: ', args.lr_milestone)
         config['optimizer']['lr_milestone'] = args.lr_milestone
