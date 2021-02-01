@@ -19,6 +19,7 @@ class DataWrapper(object):
         self.structure = config['model']['baseline']
         self.batch_size = config['dataset'][self.name]['batch_size']
         self.input_size = config['dataset'][self.name]['input_size']
+        self.padding = config['dataset'][self.name]['padding']
         self.num_workers = config['dataset'][self.name]['num_workers']
 
     def get_data_loaders(self):
@@ -34,7 +35,7 @@ class DataWrapper(object):
         return train_loader, valid_loader
 
     def _get_transform(self):
-        train_transforms_list = [transforms.RandomResizedCrop(self.input_size),
+        train_transforms_list = [transforms.RandomCrop(self.input_size, padding=self.padding),
                                 transforms.RandomHorizontalFlip()]
         test_transforms_list = [transforms.Resize(self.input_size)]
 

@@ -27,6 +27,7 @@ dataset:
     name: 'CIFAR10'
     batch_size: 128
     input_size: 32
+    padding: 4
     channel: 3
     num_cls: 10
     num_workers: 1
