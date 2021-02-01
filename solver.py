@@ -131,7 +131,7 @@ class Solver(object):
             end = timer()
             training_time += end - start
 
-            if (e+1) % self.val_epoch == 0:
+            if self.schedule == 'cyclic' or (e+1) % self.val_epoch == 0:
                 print('Training time: {}'.format(training_time))
                 self._validation(e, advattack=True)
 
