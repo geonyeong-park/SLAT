@@ -192,6 +192,34 @@ class Solver(object):
                 self.opt_theta.step()
                 if self.schedule == 'cyclic': self.theta_scheduler.step()
 
+            elif self.structure == 'CURE':
+                h = 0.01
+                x.requires_grad = True
+                logit_clean = self.model(x)
+                loss = self.cen(logit_clean, y)
+                loss.backward()
+
+                grad = x.grad.clone().data
+                shape = grad.shape
+                grad_ = grad.view(shape[0], -1)
+                norm_grad = grad_.norm(2, dim=-1, keepdim=True)
+                nonzero = norm_grad.view(-1)>0
+                grad_[nonzero] = grad_[nonzero].div(norm_grad[nonzero])
+
+                grad_ = grad_.view(shape)
+                x_hgrad = x + h*grad_
+                logit_h = self.model(x_hgrad)
+                loss_h = self.cen(logit_h, y)
+
+                reg = (loss - loss_h) / h
+                reg = reg.pow(2).mean()/2.
+                theta_loss = loss + 0.1*reg
+
+                self.opt_theta.zero_grad()
+                theta_loss.backward()
+                self.opt_theta.step()
+                if self.schedule == 'cyclic': self.theta_scheduler.step()
+
             elif self.structure == 'Free':
                 for _ in range(self.replay):
                     output = self.model(x + self.delta[:x.size(0)])

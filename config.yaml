@@ -49,8 +49,6 @@ model:
     coeff: 1.0
   Free:
     replay: 8
-  CURE:
-    gamma: 8.
   GradPenal:
     lambd: 10000
 
