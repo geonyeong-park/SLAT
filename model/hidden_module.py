@@ -85,21 +85,4 @@ class HiddenPerturb(nn.Module):
                 # PGD will be included in noise.py
                 return x
         else:
-            if self.architecture == 'advGNI' or self.architecture == 'advGNI_GA':
-                if add_adv:
-                    assert grad_mask is not None
-                    grad_mask = grad_mask.detach()
-
-                    with torch.no_grad():
-                        sgn_mask = grad_mask.data.sign()
-
-                    adv_noise = sgn_mask * self.eta * self.alpha_coeff
-                    if self.input:
-                        adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
-
-                    adv_noise = adv_noise.detach()
-                    x_hat = x + adv_noise
-                    return x_hat
-                else:
-                    return x
             return x

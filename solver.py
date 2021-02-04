@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 from torch.optim.lr_scheduler import MultiStepLR, CyclicLR
 import os
@@ -26,7 +26,7 @@ class Solver(object):
         self.device = self._get_device()
         self.log_dir = config['exp_setting']['log_dir']
         self.snapshot_dir = config['exp_setting']['snapshot_dir']
-        self.writer = SummaryWriter(log_dir=self.log_dir)
+        #self.writer = SummaryWriter(log_dir=self.log_dir)
 
         self.dataset = dataset
         self.data_name = config['dataset']['name']
@@ -84,8 +84,8 @@ class Solver(object):
             self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['multistep'],
                                             weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
             milestone = opt_param['lr_milestone']
-            step1, step2, step3 = ceil(self.epochs*milestone[0]), ceil(self.epochs*milestone[1]), ceil(self.epochs*milestone[2])
-            self.theta_scheduler = MultiStepLR(self.opt_theta, [step1,step2,step3], 0.1)
+            decay_step = [ceil(self.epochs*x) for x in milestone]
+            self.theta_scheduler = MultiStepLR(self.opt_theta, decay_step, 0.1)
         elif self.schedule == 'cyclic':
             self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['cyclic'],
                                             weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
@@ -159,11 +159,12 @@ class Solver(object):
                 # 1. Obtain a grad mask
                 # -------------------------
                 x.requires_grad = True
-                logit_clean = self.model(x, hook=True)
+                logit_clean, hidden_clean = self.model(x, hook=True, return_hidden=True)
                 loss = self.cen(logit_clean, y)
 
                 loss.backward()
                 grad = x.grad.clone().data
+                hidden_clean = hidden_clean.clone().data
                 self.model.grads['input'] = grad
                 # -------------------------
                 # 2. Train theta
@@ -171,7 +172,8 @@ class Solver(object):
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
 
-                logit_adv = self.model(x, add_adv=True)
+                logit_adv, hidden_adv = self.model(x, add_adv=True, return_hidden=True)
+                hidden_adv = hidden_adv.clone().data
 
                 # Main loss with adversarial example
                 theta_loss = self.cen(logit_adv, y)
@@ -179,7 +181,7 @@ class Solver(object):
                 theta_loss.backward(retain_graph=retain_graph)
 
                 if self.structure == 'advGNI_GA':
-                    adv_grad = x.grad.data
+                    adv_grad = x.grad.clone().data
                     cos = cosine_similarity(grad, adv_grad)
                     cos.requires_grad = True
                     if n_iter % 1000 == 0: print(cos)

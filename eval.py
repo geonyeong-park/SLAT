@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torchvision.transforms as transforms
 import os
 import sys
 import pickle as pkl
@@ -17,8 +18,8 @@ def eval(solver, checkpoint, eps):
     (2) Test adversarial robustness via FGSM, PGD, Blackbox attack
         - PGD: 50-10
     """
-    torch.manual_seed(10)
-    np.random.seed(10)
+    torch.manual_seed(0)
+    np.random.seed(0)
 
     solver.model.load_state_dict(checkpoint['model'])
     solver.model.eval()
@@ -45,7 +46,7 @@ def eval(solver, checkpoint, eps):
         # -------------------------
         # (1) Visualize loss landscape
         # -------------------------
-        if i == 2:
+        if i == 0:
             adv_vec = attack_FGSM(solver.model, x, y, solver.epsilon, clamp_=False)
             adv_vec = adv_vec[0]
             rademacher_vec = 2.*(torch.randint(2, size=adv_vec.shape)-1.) * solver.epsilon.data.cpu()
@@ -70,26 +71,35 @@ def eval(solver, checkpoint, eps):
         # -------------------------
         # (3) Adversarial robustness test
         # -------------------------
-        #pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
+        pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
         FGSM_delta = attack_FGSM(solver.model, x, y, solver.epsilon)
 
-        #pgd_logit = solver.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
-        FGSM_logit = solver.model(clamp(x + FGSM_delta[:x.size(0)], lower_limit, upper_limit))
+        pgd_adv_sample = x + pgd_delta[:x.size(0)]
+        FGSM_adv_sample = x + FGSM_delta[:x.size(0)]
 
-        #pgd_loss = solver.cen(pgd_logit, y)
-        FGSM_loss = solver.cen(FGSM_logit, y)
+        for _ in range(10):
+            pgd_adv_tf = transforms.RandomResizedCrop(solver.input_size)(pgd_adv_sample)
+            FGSM_adv_tf = transforms.RandomResizedCrop(solver.input_size)(FGSM_adv_sample)
 
-        #loss['PGD'] += pgd_loss.data.cpu().numpy()
-        loss['FGSM'] += FGSM_loss.data.cpu().numpy()
+            pgd_logit = solver.model(clamp(pgd_adv_tf, lower_limit, upper_limit))
+            FGSM_logit = solver.model(clamp(FGSM_adv_tf, lower_limit, upper_limit))
 
-        #pgd_pred = pgd_logit.data.max(1)[1]
-        FGSM_pred = FGSM_logit.data.max(1)[1]
+            pgd_loss = solver.cen(pgd_logit, y)
+            FGSM_loss = solver.cen(FGSM_logit, y)
 
-        #acc['PGD'] += pgd_pred.eq(y.data).cpu().sum()
-        acc['FGSM'] += FGSM_pred.eq(y.data).cpu().sum()
+            pgd_pred = pgd_logit.data.max(1)[1]
+            FGSM_pred = FGSM_logit.data.max(1)[1]
+
+            loss['PGD'] += float(pgd_loss)
+            loss['FGSM'] += float(FGSM_loss)
+
+            acc['PGD'] += float(pgd_pred.eq(y.data).cpu().sum())
+            acc['FGSM'] += float(FGSM_pred.eq(y.data).cpu().sum())
 
         k = y.data.size()[0]
-        counter += k
+        counter += k*10
+
+        if i % 1 == 0: print(acc['PGD']/counter)
 
     for k, v in acc.items():
         acc[k] = v / counter

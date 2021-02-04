@@ -95,7 +95,7 @@ class WideResNet(nn.Module):
             self.coeff_lower = 0.5
             self.coeff_higher = 1.
         elif self.architecture == 'advGNI_GA':
-            self.coeff_lower, self.coeff_higher = 1., 1.
+            self.coeff_lower, self.coeff_higher = 0.7, 0.7
         else:
             self.coeff_lower, self.coeff_higher = 0., 0.
 
@@ -120,7 +120,7 @@ class WideResNet(nn.Module):
             self.grads[name] = grad
         return hook
 
-    def forward(self, x, add_adv=False, hook=False, return_accum=False):
+    def forward(self, x, add_adv=False, hook=False, return_hidden=False):
         x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv)
 
         h = self.conv1(x_hat)
@@ -142,16 +142,16 @@ class WideResNet(nn.Module):
         if hook:
             h.register_hook(self.save_grad('block3'))
         h = self.noisy_module['block3'](h, self.grads['block3'], add_adv)
-        accum = h
+        hidden = h
         #print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
 
         out = self.relu(self.bn1(h))
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.nChannels)
-        if not return_accum:
+        if not return_hidden:
             return self.fc(out)
         else:
-            return self.fc(out), accum
+            return self.fc(out), hidden
 
 def WideResNet28_10(config):
     model = WideResNet(config, depth=28, widen_factor=10, dropRate=0.3)
