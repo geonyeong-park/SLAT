@@ -64,5 +64,5 @@ optimizer:
   lr:
     multistep: 0.01
     cyclic: 0.2
-  lr_milestone: [0.4, 0.8]
+  lr_milestone: [60, 120]
   weight_decay: 0.0005

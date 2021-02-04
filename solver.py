@@ -50,12 +50,16 @@ class Solver(object):
         self.cen = nn.CrossEntropyLoss()
         self.schedule = self.config['optimizer']['schedule']
         self.epochs = self.config['train']['num_epochs'][self.schedule]
+        self.lr_milestone = self.config['optimizer']['lr_milestone']
 
         if self.structure == 'Free':
             self.replay = config['model']['Free']['replay']
             self.delta = torch.zeros(self.batch_size, 3, self.input_size, self.input_size).to('cuda')
             self.delta.requires_grad = True
             self.epochs = int(self.epochs/self.replay)
+
+            epochs_full = self.config['train']['num_epochs'][self.schedule]
+            self.lr_milestone = [ceil(x/epochs_full*self.epochs) for x in self.lr_milestone]
 
         self._get_optimizer()
 
@@ -83,9 +87,7 @@ class Solver(object):
         if self.schedule == 'multistep':
             self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['multistep'],
                                             weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
-            milestone = opt_param['lr_milestone']
-            decay_step = [ceil(self.epochs*x) for x in milestone]
-            self.theta_scheduler = MultiStepLR(self.opt_theta, decay_step, 0.1)
+            self.theta_scheduler = MultiStepLR(self.opt_theta, self.lr_milestone, 0.1)
         elif self.schedule == 'cyclic':
             self.opt_theta = torch.optim.SGD(self.model.parameters(), opt_param['lr']['cyclic'],
                                             weight_decay=opt_param['weight_decay'], momentum=opt_param['momentum'])
