@@ -56,7 +56,7 @@ model:
 
 train:
   num_epochs:
-    multistep: 130
+    multistep: 120
     cyclic: 16
 optimizer:
   momentum: 0.9
@@ -64,5 +64,5 @@ optimizer:
   lr:
     multistep: 0.01
     cyclic: 0.2
-  lr_milestone: [60, 120]
+  lr_milestone: [60]
   weight_decay: 0.0005
