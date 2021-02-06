@@ -35,7 +35,7 @@ class DataWrapper(object):
         return train_loader, valid_loader
 
     def _get_transform(self):
-        train_transforms_list = [transforms.RandomResizedCrop(self.input_size),
+        train_transforms_list = [transforms.RandomCrop(self.input_size, padding=4),
                                 transforms.RandomHorizontalFlip()]
         test_transforms_list = [transforms.Resize(self.input_size)]
 

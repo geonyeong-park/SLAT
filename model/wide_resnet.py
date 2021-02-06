@@ -95,7 +95,7 @@ class WideResNet(nn.Module):
             self.coeff_lower = 0.5
             self.coeff_higher = 1.
         elif self.architecture == 'advGNI_GA':
-            self.coeff_lower, self.coeff_higher = 0.7, 0.7
+            self.coeff_lower, self.coeff_higher = 0.6, 0.6
         else:
             self.coeff_lower, self.coeff_higher = 0., 0.
 
