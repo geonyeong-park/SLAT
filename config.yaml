@@ -57,7 +57,7 @@ model:
 train:
   num_epochs:
     multistep: 120
-    cyclic: 16
+    cyclic: 30
 optimizer:
   momentum: 0.9
   schedule: multistep #multistep, cyclic

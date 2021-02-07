@@ -96,7 +96,7 @@ class Solver(object):
             else:
                 lr_steps = self.epochs * len(self.train_loader) * self.replay
             self.theta_scheduler = CyclicLR(self.opt_theta, 0., opt_param['lr']['cyclic'],
-                                            step_size_up=lr_steps/2., step_size_down=lr_steps/2.)
+                                            step_size_up=lr_steps*2./5., step_size_down=lr_steps*3/5.)
 
     def pretrain(self):
         """For CURE"""
