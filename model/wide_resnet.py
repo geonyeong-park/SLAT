@@ -95,7 +95,7 @@ class WideResNet(nn.Module):
             self.coeff_lower = 0.5
             self.coeff_higher = 1.
         elif self.architecture == 'advGNI_GA':
-            self.coeff_lower, self.coeff_higher = 0.6, 0.6
+            self.coeff_lower, self.coeff_higher = 0.7, 0.7
         else:
             self.coeff_lower, self.coeff_higher = 0., 0.
 
@@ -120,28 +120,28 @@ class WideResNet(nn.Module):
             self.grads[name] = grad
         return hook
 
-    def forward(self, x, add_adv=False, hook=False, return_hidden=False):
-        x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv)
+    def forward(self, x, add_adv=False, hook=False, return_hidden=False, increase_eps=False):
+        x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv, increase_eps)
 
         h = self.conv1(x_hat)
         if hook:
             h.register_hook(self.save_grad('conv1'))
-        h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv)
+        h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv, increase_eps)
 
         h = self.block1(h)
         if hook:
             h.register_hook(self.save_grad('block1'))
-        h = self.noisy_module['block1'](h, self.grads['block1'], add_adv)
+        h = self.noisy_module['block1'](h, self.grads['block1'], add_adv, increase_eps)
 
         h = self.block2(h)
         if hook:
             h.register_hook(self.save_grad('block2'))
-        h = self.noisy_module['block2'](h, self.grads['block2'], add_adv)
+        h = self.noisy_module['block2'](h, self.grads['block2'], add_adv, increase_eps)
 
         h = self.block3(h)
         if hook:
             h.register_hook(self.save_grad('block3'))
-        h = self.noisy_module['block3'](h, self.grads['block3'], add_adv)
+        h = self.noisy_module['block3'](h, self.grads['block3'], add_adv, increase_eps)
         hidden = h
         #print('min: {}, max: {}, mean: {}'.format(h.view(h.shape[0], -1).min(1).values, h.view(h.shape[0], -1).max(1).values, h.view(h.shape[0], -1).mean(dim=1).values))
 

@@ -161,21 +161,20 @@ class Solver(object):
                 # 1. Obtain a grad mask
                 # -------------------------
                 x.requires_grad = True
-                logit_clean, hidden_clean = self.model(x, hook=True, return_hidden=True)
+                logit_clean = self.model(x, hook=True)
                 loss = self.cen(logit_clean, y)
 
                 loss.backward()
                 grad = x.grad.clone().data
-                hidden_clean = hidden_clean.clone().data
                 self.model.grads['input'] = grad
                 # -------------------------
                 # 2. Train theta
                 # -------------------------
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
+                increase_eps = True if self.schedule != 'cyclic' and i+1>=self.lr_milestone[0] else False
 
-                logit_adv, hidden_adv = self.model(x, add_adv=True, return_hidden=True)
-                hidden_adv = hidden_adv.clone().data
+                logit_adv = self.model(x, add_adv=True, increase_eps=increase_eps)
 
                 # Main loss with adversarial example
                 theta_loss = self.cen(logit_adv, y)
