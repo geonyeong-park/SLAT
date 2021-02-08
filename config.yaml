@@ -60,7 +60,7 @@ train:
     cyclic: 30
 optimizer:
   momentum: 0.9
-  schedule: multistep #multistep, cyclic
+  schedule: cyclic #multistep, cyclic
   lr:
     multistep: 0.01
     cyclic: 0.2
