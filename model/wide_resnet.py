@@ -93,17 +93,17 @@ class WideResNet(nn.Module):
 
         if self.architecture == 'advGNI':
             self.coeff_lower = 0.5
-            self.coeff_higher = 1.
+            self.coeff_higher = 0.5
         elif self.architecture == 'advGNI_GA':
-            self.coeff_lower, self.coeff_higher = 0.8, 0.8
+            self.coeff_lower, self.coeff_higher = 0.9, 0.9
         else:
             self.coeff_lower, self.coeff_higher = 0., 0.
 
         self.noisy_module = nn.ModuleDict({
             'input': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower, True),
-            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
-            'block1': HiddenPerturb(self.architecture, self.eta/255, self.coeff_lower),
-            'block2': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
+            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.coeff_higher),
+            'block1': HiddenPerturb(self.architecture, self.eta/255, self.coeff_higher),
+            'block2': HiddenPerturb(self.architecture, self.eta/255., self.coeff_higher),
             'block3': HiddenPerturb(self.architecture, self.eta/255., self.coeff_higher),
         })
 

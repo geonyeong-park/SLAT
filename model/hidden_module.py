@@ -36,6 +36,7 @@ class HiddenPerturb(nn.Module):
                         sgn_mask = grad_mask.data.sign()
 
                     alpha = 1. if increase_eps else self.alpha_coeff
+                    #alpha = random.uniform(0,1)*0.5+0.5
                     adv_noise = sgn_mask * self.eta * alpha
                     if self.input:
                         adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
