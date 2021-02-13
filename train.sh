@@ -11,7 +11,7 @@ pgditer=0
 if [ "$2" == "PGD" ]; then
     pgditer=$3
 fi
-eps_list=( 9 10 5 6 7 )
+eps_list=( 9 10 )
 
 for seed in {1..4}; do
     for eps in ${eps_list[@]}; do
