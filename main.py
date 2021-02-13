@@ -131,7 +131,7 @@ def main(config, args):
     if args.resume is None:
         solver.train()
     else:
-        BB_ckpt = torch.load('snapshots/CIFAR10_cycle_eps8_PGD7_seed1/pretrain.pth')
+        BB_ckpt = torch.load('snapshots/BlackBox_eps8_PGD7/pretrain.pth')
         eval(solver, checkpoint, BB_ckpt, config['model']['ResNet']['eta'])
 
 
