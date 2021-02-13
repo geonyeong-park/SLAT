@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
+from utils.utils import mean, std
 import os
 import sys
 import pickle as pkl
@@ -9,9 +10,11 @@ import matplotlib.pyplot as plt
 from utils.attack import attack_FGSM, attack_pgd
 from utils.utils import clamp, lower_limit, upper_limit
 from visualize.visualize_land import compute_perturb, plot_perturb_plt, visualize_perturb
+from model.wide_resnet import WideResNet28_10, WideResNet
+from autoattack import AutoAttack
 
 
-def eval(solver, checkpoint, eps):
+def eval(solver, checkpoint, BB_ckpt, eps):
     """
     (1) Visualize loss landscape
     (2) Visualize accumulated penultimate feature
@@ -25,17 +28,25 @@ def eval(solver, checkpoint, eps):
     solver.model.eval()
     solver.model.to('cuda')
 
+    BB_model = WideResNet28_10(solver.config).to('cuda')
+    BB_model.load_state_dict(BB_ckpt['model'])
+    auto_adversary = AutoAttack(AutoWrapper(solver.model), norm='Linf', eps=eps/255., version='standard')
+    mu_, std_ = torch.tensor(mean).float(), torch.tensor(std).float()
+    denorm = transforms.Normalize((-mu_/std_).tolist(), (1./std_).tolist())
+
     png_path = lambda x: os.path.join(solver.log_dir, '{}.png'.format(x))
 
     acc = {
         'FGSM': 0.,
         'PGD': 0.,
-        'Black': 0.
+        'Black': 0.,
+        'auto': 0.
     }
     loss = {
         'FGSM': 0.,
         'PGD': 0.,
-        'Black': 0.
+        'Black': 0.,
+        'auto': 0.
     }
     counter = 0
 
@@ -73,33 +84,33 @@ def eval(solver, checkpoint, eps):
         # -------------------------
         pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
         FGSM_delta = attack_FGSM(solver.model, x, y, solver.epsilon)
+        bb_delta = attack_pgd(BB_model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
+        auto_sample = auto_adversary.run_standard_evaluation(denorm(x), y, bs=x.shape[0])
+        print(auto_sample)
 
-        pgd_adv_sample = x + pgd_delta[:x.size(0)]
-        FGSM_adv_sample = x + FGSM_delta[:x.size(0)]
+        pgd_loss, pgd_acc = _adv_loss_acc(pgd_delta, x, y, solver.model, solver.cen)
+        loss['PGD'] += pgd_loss
+        acc['PGD'] += pgd_acc
 
-        for _ in range(10):
-            pgd_adv_tf = transforms.RandomResizedCrop(solver.input_size)(pgd_adv_sample)
-            FGSM_adv_tf = transforms.RandomResizedCrop(solver.input_size)(FGSM_adv_sample)
+        FGSM_loss, FGSM_acc = _adv_loss_acc(FGSM_delta, x, y, solver.model, solver.cen)
+        loss['FGSM'] += FGSM_loss
+        acc['FGSM'] += FGSM_acc
 
-            pgd_logit = solver.model(clamp(pgd_adv_tf, lower_limit, upper_limit))
-            FGSM_logit = solver.model(clamp(FGSM_adv_tf, lower_limit, upper_limit))
+        Black_loss, Black_acc = _adv_loss_acc(bb_delta, x, y, solver.model, solver.cen)
+        loss['Black'] += Black_loss
+        acc['Black'] += Black_acc
 
-            pgd_loss = solver.cen(pgd_logit, y)
-            FGSM_loss = solver.cen(FGSM_logit, y)
-
-            pgd_pred = pgd_logit.data.max(1)[1]
-            FGSM_pred = FGSM_logit.data.max(1)[1]
-
-            loss['PGD'] += float(pgd_loss)
-            loss['FGSM'] += float(FGSM_loss)
-
-            acc['PGD'] += float(pgd_pred.eq(y.data).cpu().sum())
-            acc['FGSM'] += float(FGSM_pred.eq(y.data).cpu().sum())
+        Auto_loss, Auto_acc = _adv_loss_acc(auto_sample, x, y, AutoWrapper(solver.model), solver.cen, adv_sample=True)
+        loss['auto'] += Auto_loss
+        acc['auto'] += Auto_acc
 
         k = y.data.size()[0]
-        counter += k*10
+        counter += k
 
-        if i % 1 == 0: print(acc['PGD']/counter)
+        if i % 1 == 0:
+            print('PGD: ', acc['PGD']/counter)
+            print('Black: ', acc['Black']/counter)
+            print('Auto: ', acc['auto']/counter)
 
     for k, v in acc.items():
         acc[k] = v / counter
@@ -107,3 +118,31 @@ def eval(solver, checkpoint, eps):
 
     print(acc)
     print(loss)
+
+    sample_path = os.path.join(solver.log_dir, 'eval.pkl')
+    with open(sample_path, 'wb') as f:
+        pkl.dump(acc, f, pkl.HIGHEST_PROTOCOL)
+        pkl.dump(loss, f, pkl.HIGHEST_PROTOCOL)
+
+def _adv_loss_acc(delta, x, y, model, cen, adv_sample=False):
+    if not adv_sample:
+        adv_sample = x + delta[:x.size(0)]
+        logit = model(clamp(adv_sample, lower_limit, upper_limit))
+    else:
+        adv_sample = delta
+        logit = model(adv_sample)
+    loss = float(cen(logit, y))
+    pred = logit.data.max(1)[1]
+    acc = float(pred.eq(y.data).cpu().sum())
+    return loss, acc
+
+class AutoWrapper(nn.Module):
+    def __init__(self, model):
+        super(AutoWrapper, self).__init__()
+        self.model = model
+        self.mu = torch.Tensor([0.4914, 0.4822, 0.4465]).float().view(3, 1, 1).cuda()
+        self.sigma = torch.Tensor([0.2471, 0.2435, 0.2616]).float().view(3, 1, 1).cuda()
+
+    def forward(self, x):
+        x_ = (x - self.mu) / self.sigma
+        return self.model(x_)
