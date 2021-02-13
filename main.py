@@ -33,8 +33,7 @@ def get_arguments():
     parser.add_argument("--eta", type=float, default=None,
                         required=False, help="Variance")
     parser.add_argument("--PGD_iters", default=None, type=int, required=False, help="")
-    parser.add_argument("--coeff_lower", default=None, type=float, required=False, help="")
-    parser.add_argument("--coeff_higher", default=None, type=float, required=False, help="")
+    parser.add_argument("--alpha", default=None, type=float, required=False, help="")
     parser.add_argument("--GA_coeff", default=None, type=float, required=False, help="")
     parser.add_argument("--num_epochs", type=int, default=None,
                         required=False, help="")
@@ -98,12 +97,10 @@ def main(config, args):
     if args.PGD_iters is not None:
         print('PGD iters: {}'.format(args.PGD_iters))
         config['model']['PGD']['iters'] = args.PGD_iters
-    if args.coeff_lower is not None:
-        print('Alpha for low layers: {}'.format(args.coeff_lower))
-        config['model']['advGNI']['coeff_lower'] = args.coeff_lower
-    if args.coeff_higher is not None:
-        print('Alpha for high layers: {}'.format(args.coeff_higher))
-        config['model']['advGNI']['coeff_higher'] = args.coeff_higher
+    if args.alpha is not None:
+        assert 'advGNI' in structure
+        print('Alpha for hidden layers: {}'.format(args.alpha))
+        config['model'][structure]['alpha'] = args.alpha
     if args.GA_coeff is not None:
         print('Coeff for Gradient Alignment: {}'.format(args.GA_coeff))
         config['model']['FGSM_GA']['coeff'] = args.GA_coeff

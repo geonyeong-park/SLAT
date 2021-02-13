@@ -51,6 +51,10 @@ model:
     replay: 8
   GradPenal:
     lambd: 10000
+  advGNI:
+    alpha: 0.5
+  advGNI_GA:
+    alpha: 1.
 
 train:
   num_epochs:
