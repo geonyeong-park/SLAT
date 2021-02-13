@@ -13,20 +13,14 @@ if [ "$2" == "PGD" ]; then
 fi
 eps_list=( 9 10 )
 
-for seed in {1..4}; do
-    for eps in ${eps_list[@]}; do
-        if [ "$2" == "PGD" ]; then
-            expname="CIFAR10_cycle_eps"$eps"_"$2""$pgditer"_seed"${seed}""
-        else
-            expname="CIFAR10_cycle_eps"$eps"_"$2"_seed"${seed}""
-        fi
+GA_list=( 1. )
+alpha_list=( 0.5 0.6 )
 
-        if [ "$2" == "Free" ]; then
-            CUDA_VISIBLE_DEVICES=$1 python3 main.py --gpu $1 --dataset_name 'CIFAR10' --model_structure $2 \
-                --exp_name "$expname" --eta $eps --PGD_iters $pgditer --num_epochs 72
-        else
-            CUDA_VISIBLE_DEVICES=$1 python3 main.py --gpu $1 --dataset_name 'CIFAR10' --model_structure $2 \
-                --exp_name "$expname" --eta $eps --PGD_iters $pgditer
-        fi
+for GA in ${GA_list[@]}; do
+    for alpha in ${alpha_list[@]}; do
+        expname="CIFAR10_cycle_eps8_GA"${GA}"_alpha"${alpha}""
+
+        CUDA_VISIBLE_DEVICES=1 python3 main.py --gpu 1 --dataset_name 'CIFAR10' --model_structure advGNI_GA \
+            --exp_name "$expname" --eta 8 --GA_coeff $GA --alpha $alpha
     done
 done
