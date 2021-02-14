@@ -35,14 +35,17 @@ def eval(solver, checkpoint, BB_ckpt, eps):
     denorm = transforms.Normalize((-mu_/std_).tolist(), (1./std_).tolist())
 
     png_path = lambda x: os.path.join(solver.log_dir, '{}.png'.format(x))
+    sample_path = os.path.join(solver.log_dir, 'eval.pkl')
 
     acc = {
+        'clean': 0.,
         'FGSM': 0.,
         'PGD': 0.,
         'Black': 0.,
         'auto': 0.
     }
     loss = {
+        'clean': 0.,
         'FGSM': 0.,
         'PGD': 0.,
         'Black': 0.,
@@ -84,9 +87,8 @@ def eval(solver, checkpoint, BB_ckpt, eps):
         # -------------------------
         pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
         FGSM_delta = attack_FGSM(solver.model, x, y, solver.epsilon)
-        bb_delta = attack_pgd(BB_model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
+        bb_delta = attack_FGSM(BB_model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
         auto_sample = auto_adversary.run_standard_evaluation(denorm(x), y, bs=x.shape[0])
-        print(auto_sample)
 
         pgd_loss, pgd_acc = _adv_loss_acc(pgd_delta, x, y, solver.model, solver.cen)
         loss['PGD'] += pgd_loss
@@ -104,6 +106,10 @@ def eval(solver, checkpoint, BB_ckpt, eps):
         loss['auto'] += Auto_loss
         acc['auto'] += Auto_acc
 
+        clean_loss, clean_acc = _adv_loss_acc(x, x, y, solver.model, solver.cen, adv_sample=True)
+        loss['clean'] += clean_loss
+        acc['clean'] += clean_acc
+
         k = y.data.size()[0]
         counter += k
 
@@ -111,6 +117,16 @@ def eval(solver, checkpoint, BB_ckpt, eps):
             print('PGD: ', acc['PGD']/counter)
             print('Black: ', acc['Black']/counter)
             print('Auto: ', acc['auto']/counter)
+            print('clean: ', acc['clean']/counter)
+
+        if i % 1 == 10:
+            acc_, loss_ = {}, {}
+            for k, v in acc.items():
+                acc_[k] = v / counter
+                loss_[k] = loss[k] / counter
+            with open(sample_path, 'wb') as f:
+                pkl.dump(acc_, f, pkl.HIGHEST_PROTOCOL)
+                pkl.dump(loss_, f, pkl.HIGHEST_PROTOCOL)
 
     for k, v in acc.items():
         acc[k] = v / counter
@@ -119,7 +135,6 @@ def eval(solver, checkpoint, BB_ckpt, eps):
     print(acc)
     print(loss)
 
-    sample_path = os.path.join(solver.log_dir, 'eval.pkl')
     with open(sample_path, 'wb') as f:
         pkl.dump(acc, f, pkl.HIGHEST_PROTOCOL)
         pkl.dump(loss, f, pkl.HIGHEST_PROTOCOL)

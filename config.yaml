@@ -54,7 +54,7 @@ model:
   advGNI:
     alpha: 0.5
   advGNI_GA:
-    alpha: 0.9
+    alpha: 0.7
 
 train:
   num_epochs:

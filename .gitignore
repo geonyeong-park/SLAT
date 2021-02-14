@@ -4,7 +4,6 @@ snapshots/
 __pycache__/
 *.ipynb
 *.png
-*.sh
 test.py
 model/PGDtrainer.py
 gaussian_test.py
