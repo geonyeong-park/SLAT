@@ -164,17 +164,18 @@ class Solver(object):
                 logit_clean = self.model(x, hook=True)
                 loss = self.cen(logit_clean, y)
 
+                self.opt_theta.zero_grad()
                 loss.backward()
                 grad = x.grad.clone().data
                 self.model.grads['input'] = grad
+
                 # -------------------------
                 # 2. Train theta
                 # -------------------------
                 self.opt_theta.zero_grad()
                 self.model.zero_grad()
-                increase_eps = True if self.schedule != 'cyclic' and i+1>=self.lr_milestone[0] else False
 
-                logit_adv = self.model(x, add_adv=True, increase_eps=increase_eps)
+                logit_adv = self.model(x, add_adv=True)
 
                 # Main loss with adversarial example
                 theta_loss = self.cen(logit_adv, y)
@@ -234,9 +235,9 @@ class Solver(object):
                     self.delta.grad.zero_()
                     if self.schedule == 'cyclic': self.theta_scheduler.step()
 
-            elif self.structure == 'FGSM' or self.structure == 'FGSM_GA':
+            elif self.structure == 'FGSM' or self.structure == 'FGSM_GA' or self.structure == 'FGSM_GA_advGNI':
                 x.requires_grad = True
-                logit_clean = self.model(x)
+                logit_clean = self.model(x, hook=True if self.structure=='FGSM_GA_advGNI' else False)
                 loss = self.cen(logit_clean, y)
 
                 self.model.zero_grad()
@@ -252,7 +253,7 @@ class Solver(object):
 
                 reg = torch.zeros(1).cuda()[0]
 
-                if self.structure == 'FGSM_GA':
+                if 'FGSM_GA' in self.structure:
                     # Gradient alignment
                     cos_ = cos_by_uniform(self.model, x, y, self.epsilon, grad)
                     if n_iter % 1000 == 0: print(cos_)
@@ -296,24 +297,6 @@ class Solver(object):
                 loss.backward()
                 self.opt_theta.step()
                 if self.schedule == 'cyclic': self.theta_scheduler.step()
-
-            elif self.structure == 'GradPenal':
-                x.requires_grad = True
-                logit = self.model(x)
-                loss = self.cen(logit, y)
-
-                loss.backward()
-                grad = x.grad.clone().data
-
-                self.opt_theta.zero_grad()
-                logit_adv = self.model(x, add_adv=True)
-
-                # Main loss with adversarial example
-                theta_loss = self.cen(logit_adv, y)
-                grad_norm = torch.mean(grad.view(grad.shape[0], -1).norm(p=2, dim=1))
-                theta_loss += self.config['model']['GradPenal']['lambd']*grad_norm
-                theta_loss.backward()
-                self.opt_theta.step()
 
             else:
                 self.opt_theta.zero_grad()

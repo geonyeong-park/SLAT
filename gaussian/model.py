@@ -13,12 +13,12 @@ class basemodel(nn.Module):
         self.epsilon = epsilon
 
         self.sigmoid = nn.Sigmoid()
-        self.fc = nn.Linear(2, n_hidden, bias=False)
+        self.fc = nn.Linear(2, n_hidden)
         self.logit = nn.Linear(n_hidden, 1)
 
         self.noisy_module = nn.ModuleDict({
             'input': HiddenPerturb(self.architecture, self.epsilon, 1., True),
-            'fc': HiddenPerturb(self.architecture, self.epsilon, 0.9),
+            'fc': HiddenPerturb(self.architecture, self.epsilon, 3.6),
         })
         # epsilon=0.1, n=512:: alpha_1=1., alpha_2=3.5, FGSM=96.69%, advGNI=94.19% (bias False:
         # 95.90%)

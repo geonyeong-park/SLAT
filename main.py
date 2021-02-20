@@ -25,8 +25,10 @@ def get_arguments():
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA', 'GradPenal'")
+                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA', 'FGSM_GA_advGNI'")
     parser.add_argument("--resume", type=str, default=None,
+                        required=False, help="")
+    parser.add_argument("--no_auto", default=False, action='store_true',
                         required=False, help="")
     parser.add_argument("--pretrain", default=False, action='store_true',
                         required=False, help="")
@@ -131,8 +133,9 @@ def main(config, args):
     if args.resume is None:
         solver.train()
     else:
-        BB_ckpt = torch.load('snapshots/BlackBox_eps8_base/pretrain.pth')
-        eval(solver, checkpoint, BB_ckpt, config['model']['ResNet']['eta'])
+        auto=False if args.no_auto else True
+        BB_ckpt = torch.load('snapshots/BlackBox_eps8_PGD7/pretrain.pth')
+        eval(solver, checkpoint, BB_ckpt, config['model']['ResNet']['eta'], auto)
 
 
 

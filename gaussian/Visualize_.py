@@ -1,10 +1,12 @@
 import numpy as np
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
 from gaussian.Data import mu, cov
 
+matplotlib.rcParams.update({'font.size': 17})
 
 def draw_decision_countour(encoder, ax, X, Y, n_samples, n):
     xi = np.linspace(-2., 2., 100)
@@ -21,7 +23,8 @@ def draw_decision_countour(encoder, ax, X, Y, n_samples, n):
     pr = pr.data.cpu().numpy().reshape(100, 100)
     ax.contourf(Xmesh, Ymesh, pr, cmap='RdBu', alpha=0.3)
     ax.set_xlim([-2,2])
-    ax.set_xlabel('n={}'.format(n))
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
 
 def plot_gaussian(ax, Xmesh, Ymesh, mu, cov, levels=[0.2,0.4,0.6,0.8,1.0]):
     # define grid.

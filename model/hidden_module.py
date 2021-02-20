@@ -22,12 +22,12 @@ class HiddenPerturb(nn.Module):
         self.alpha_coeff = alpha_coeff
         self.eta = eta / std_t if input else torch.tensor(eta).to('cuda')
 
-    def forward(self, x, grad_mask=None, add_adv=False, increase_eps=False):
+    def forward(self, x, grad_mask=None, add_adv=False):
         if self.training:
             if self.architecture == 'GNI':
                 x_hat = x + torch.randn_like(x) * sqrt(0.001)
                 return x_hat
-            elif self.architecture == 'advGNI' or self.architecture == 'advGNI_GA':
+            elif 'advGNI' in self.architecture:
                 if add_adv:
                     assert grad_mask is not None
                     grad_mask = grad_mask.detach()
@@ -35,8 +35,7 @@ class HiddenPerturb(nn.Module):
                     with torch.no_grad():
                         sgn_mask = grad_mask.data.sign()
 
-                    alpha = 1. if increase_eps else self.alpha_coeff
-                    #alpha = random.uniform(0,1)*0.5+0.5
+                    alpha = 1. if self.architecture == 'FGSM_GA_advGNI' and self.input else self.alpha_coeff
                     adv_noise = sgn_mask * self.eta * alpha
                     if self.input:
                         adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)

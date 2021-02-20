@@ -31,21 +31,18 @@ class PreActResNet(nn.Module):
         self.bn = nn.BatchNorm2d(512 * block.expansion)
         self.linear = nn.Linear(512 * block.expansion, self.num_cls)
 
-        if self.architecture == 'advGNI':
-            self.coeff_lower = 0.5
-            self.coeff_higher = 1.
-        elif self.architecture == 'advGNI_GA':
-            self.coeff_lower, self.coeff_higher = 1., 1.
+        if 'advGNI' in self.architecture:
+            self.alpha = config['model'][self.architecture]['alpha']
         else:
-            self.coeff_lower, self.coeff_higher = 0., 0.
+            self.alpha = 0.
 
         self.noisy_module = nn.ModuleDict({
-            'input': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower, True),
-            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
-            'layer1': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
-            'layer2': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
-            'layer3': HiddenPerturb(self.architecture, self.eta/255., self.coeff_lower),
-            'layer4': HiddenPerturb(self.architecture, self.eta/255., self.coeff_higher)
+            'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha, True),
+            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            'layer1': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            'layer2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            'layer3': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            'layer4': HiddenPerturb(self.architecture, self.eta/255., self.alpha)
         })
 
         self.grads = {

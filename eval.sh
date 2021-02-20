@@ -11,7 +11,7 @@ pgditer=0
 if [ "$2" == "PGD" ]; then
     pgditer=$3
 fi
-eps_list=( 8 )
+eps_list=( 9 10 5 6 7 )
 
 for eps in ${eps_list[@]}; do
     for seed in {1..4}; do
@@ -23,6 +23,6 @@ for eps in ${eps_list[@]}; do
 
         CUDA_VISIBLE_DEVICES=$1 python3 main.py --gpu $1 --dataset_name 'CIFAR10' --model_structure $2 \
             --exp_name "$expname" --eta $eps --PGD_iters $pgditer \
-            --resume "snapshots/"$expname"/pretrain.pth"
+            --resume "snapshots/"$expname"/pretrain.pth" --no_auto
         done
 done

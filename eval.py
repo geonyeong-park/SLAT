@@ -7,14 +7,15 @@ import sys
 import pickle as pkl
 import numpy as np
 import matplotlib.pyplot as plt
-from utils.attack import attack_FGSM, attack_pgd
+from utils.attack import attack_FGSM, attack_pgd, attack_black_simbaODS
 from utils.utils import clamp, lower_limit, upper_limit
 from visualize.visualize_land import compute_perturb, plot_perturb_plt, visualize_perturb
 from model.wide_resnet import WideResNet28_10, WideResNet
+from model.resnet import PreActResNet18
 from autoattack import AutoAttack
 
 
-def eval(solver, checkpoint, BB_ckpt, eps):
+def eval(solver, checkpoint, BB_ckpt, eps, auto):
     """
     (1) Visualize loss landscape
     (2) Visualize accumulated penultimate feature
@@ -28,8 +29,9 @@ def eval(solver, checkpoint, BB_ckpt, eps):
     solver.model.eval()
     solver.model.to('cuda')
 
-    BB_model = WideResNet28_10(solver.config).to('cuda')
-    BB_model.load_state_dict(BB_ckpt['model'])
+    #BB_model = WideResNet28_10(solver.config).to('cuda')
+    #BB_model.load_state_dict(BB_ckpt['model'])
+    #BB_model.eval()
     auto_adversary = AutoAttack(AutoWrapper(solver.model), norm='Linf', eps=eps/255., version='standard')
     mu_, std_ = torch.tensor(mean).float(), torch.tensor(std).float()
     denorm = transforms.Normalize((-mu_/std_).tolist(), (1./std_).tolist())
@@ -87,8 +89,6 @@ def eval(solver, checkpoint, BB_ckpt, eps):
         # -------------------------
         pgd_delta = attack_pgd(solver.model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
         FGSM_delta = attack_FGSM(solver.model, x, y, solver.epsilon)
-        bb_delta = attack_FGSM(BB_model, x, y, solver.epsilon, solver.pgd_alpha, 50, 10)
-        auto_sample = auto_adversary.run_standard_evaluation(denorm(x), y, bs=x.shape[0])
 
         pgd_loss, pgd_acc = _adv_loss_acc(pgd_delta, x, y, solver.model, solver.cen)
         loss['PGD'] += pgd_loss
@@ -98,13 +98,11 @@ def eval(solver, checkpoint, BB_ckpt, eps):
         loss['FGSM'] += FGSM_loss
         acc['FGSM'] += FGSM_acc
 
-        Black_loss, Black_acc = _adv_loss_acc(bb_delta, x, y, solver.model, solver.cen)
-        loss['Black'] += Black_loss
-        acc['Black'] += Black_acc
-
-        Auto_loss, Auto_acc = _adv_loss_acc(auto_sample, x, y, AutoWrapper(solver.model), solver.cen, adv_sample=True)
-        loss['auto'] += Auto_loss
-        acc['auto'] += Auto_acc
+        if auto:
+            auto_sample = auto_adversary.run_standard_evaluation(denorm(x), y, bs=x.shape[0])
+            Auto_loss, Auto_acc = _adv_loss_acc(auto_sample, x, y, AutoWrapper(solver.model), solver.cen, adv_sample=True)
+            loss['auto'] += Auto_loss
+            acc['auto'] += Auto_acc
 
         clean_loss, clean_acc = _adv_loss_acc(x, x, y, solver.model, solver.cen, adv_sample=True)
         loss['clean'] += clean_loss
@@ -115,9 +113,8 @@ def eval(solver, checkpoint, BB_ckpt, eps):
 
         if i % 1 == 0:
             print('PGD: ', acc['PGD']/counter)
-            print('Black: ', acc['Black']/counter)
-            print('Auto: ', acc['auto']/counter)
             print('clean: ', acc['clean']/counter)
+            if auto: print('Auto: ', acc['auto']/counter)
 
         if i % 1 == 10:
             acc_, loss_ = {}, {}

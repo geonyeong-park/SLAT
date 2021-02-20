@@ -36,7 +36,7 @@ dataset:
 
 
 model:
-  baseline: ['base', 'advGNI', 'advGNI_GA', 'Free', 'FGSM', 'CURE', 'PGD', 'FGSM_RS', 'FGSM_GA', 'GradPenal']
+  baseline: ['base', 'advGNI', 'advGNI_GA', 'Free', 'FGSM', 'CURE', 'PGD', 'FGSM_RS', 'FGSM_GA', 'FGSM_GA_advGNI']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
   CIFAR10: 'Wide_ResNet'
@@ -49,12 +49,12 @@ model:
     coeff: 1.0
   Free:
     replay: 8
-  GradPenal:
-    lambd: 10000
   advGNI:
     alpha: 0.5
   advGNI_GA:
-    alpha: 0.7
+    alpha: 0.9
+  FGSM_GA_advGNI:
+    alpha: 0.9
 
 train:
   num_epochs:
