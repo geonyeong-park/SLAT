@@ -27,7 +27,7 @@ class HiddenPerturb(nn.Module):
             if self.architecture == 'GNI':
                 x_hat = x + torch.randn_like(x) * sqrt(0.001)
                 return x_hat
-            elif 'advGNI' in self.architecture:
+            elif self.architecture in ['advGNI', 'advGNI_GA']:
                 if add_adv:
                     assert grad_mask is not None
                     grad_mask = grad_mask.detach()
@@ -35,8 +35,7 @@ class HiddenPerturb(nn.Module):
                     with torch.no_grad():
                         sgn_mask = grad_mask.data.sign()
 
-                    alpha = 1. if self.architecture == 'FGSM_GA_advGNI' and self.input else self.alpha_coeff
-                    adv_noise = sgn_mask * self.eta * alpha
+                    adv_noise = sgn_mask * self.eta * self.alpha_coeff
                     if self.input:
                         adv_noise.data = clamp(adv_noise, lower_limit - x, upper_limit - x)
 

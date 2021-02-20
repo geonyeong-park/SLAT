@@ -25,7 +25,7 @@ def get_arguments():
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA', 'FGSM_GA_advGNI'")
+                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA')
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
     parser.add_argument("--no_auto", default=False, action='store_true',

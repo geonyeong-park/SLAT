@@ -235,9 +235,9 @@ class Solver(object):
                     self.delta.grad.zero_()
                     if self.schedule == 'cyclic': self.theta_scheduler.step()
 
-            elif self.structure == 'FGSM' or self.structure == 'FGSM_GA' or self.structure == 'FGSM_GA_advGNI':
+            elif self.structure == 'FGSM' or self.structure == 'FGSM_GA':
                 x.requires_grad = True
-                logit_clean = self.model(x, hook=True if self.structure=='FGSM_GA_advGNI' else False)
+                logit_clean = self.model(x)
                 loss = self.cen(logit_clean, y)
 
                 self.model.zero_grad()

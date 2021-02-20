@@ -36,7 +36,7 @@ dataset:
 
 
 model:
-  baseline: ['base', 'advGNI', 'advGNI_GA', 'Free', 'FGSM', 'CURE', 'PGD', 'FGSM_RS', 'FGSM_GA', 'FGSM_GA_advGNI']
+  baseline: ['base', 'advGNI', 'advGNI_GA', 'Free', 'FGSM', 'CURE', 'PGD', 'FGSM_RS', 'FGSM_GA']
   evalmode: ['adv_attack', 'normal']
   SVHN: 'ResNet'
   CIFAR10: 'Wide_ResNet'
