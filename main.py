@@ -25,7 +25,7 @@ def get_arguments():
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA')
+                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA'")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
     parser.add_argument("--no_auto", default=False, action='store_true',
@@ -35,6 +35,7 @@ def get_arguments():
     parser.add_argument("--eta", type=float, default=None,
                         required=False, help="Variance")
     parser.add_argument("--PGD_iters", default=None, type=int, required=False, help="")
+    parser.add_argument("--advGNI_iters", default=None, type=int, required=False, help="")
     parser.add_argument("--alpha", default=None, type=float, required=False, help="")
     parser.add_argument("--GA_coeff", default=None, type=float, required=False, help="")
     parser.add_argument("--num_epochs", type=int, default=None,
@@ -99,6 +100,9 @@ def main(config, args):
     if args.PGD_iters is not None:
         print('PGD iters: {}'.format(args.PGD_iters))
         config['model']['PGD']['iters'] = args.PGD_iters
+    if args.advGNI_iters is not None:
+        print('{} iters: {}'.format(args.model_structure, args.advGNI_iters))
+        config['model'][args.model_structure]['iters'] = args.advGNI_iters
     if args.alpha is not None:
         assert 'advGNI' in structure
         print('Alpha for hidden layers: {}'.format(args.alpha))

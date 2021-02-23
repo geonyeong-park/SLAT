@@ -157,24 +157,24 @@ class Solver(object):
             self.model.zero_grad()
 
             if self.structure == 'advGNI' or self.structure == 'advGNI_GA':
+                x.requires_grad = True
+                self.opt_theta.zero_grad()
+
+                for i in range(self.config['model'][self.structure]['iters']):
                 # -------------------------
                 # 1. Obtain a grad mask
                 # -------------------------
-                x.requires_grad = True
-                logit_clean = self.model(x, hook=True)
-                loss = self.cen(logit_clean, y)
-
-                self.opt_theta.zero_grad()
-                loss.backward()
-                grad = x.grad.clone().data
-                self.model.grads['input'] = grad
+                    logit = self.model(x, hook=True,
+                                       init_hidden=True if i==0 else False,
+                                       add_adv=True if i!=0 else False)
+                    loss = self.cen(logit, y)
+                    loss.backward()
+                    if i==0: grad = x.grad.clone().data
+                    self.model.zero_grad()
 
                 # -------------------------
                 # 2. Train theta
                 # -------------------------
-                self.opt_theta.zero_grad()
-                self.model.zero_grad()
-
                 logit_adv = self.model(x, add_adv=True)
 
                 # Main loss with adversarial example

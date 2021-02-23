@@ -51,10 +51,10 @@ model:
     replay: 8
   advGNI:
     alpha: 0.5
+    iters: 2
   advGNI_GA:
     alpha: 0.9
-  FGSM_GA_advGNI:
-    alpha: 0.9
+    iters: 2
 
 train:
   num_epochs:
