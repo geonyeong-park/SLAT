@@ -50,7 +50,7 @@ model:
   Free:
     replay: 8
   advGNI:
-    alpha: 0.5
+    alpha: 0.9
     iters: 2
   advGNI_GA:
     alpha: 0.9
