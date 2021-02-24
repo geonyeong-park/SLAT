@@ -8,4 +8,5 @@ test.py
 model/PGDtrainer.py
 gaussian_test.py
 gaussian/
+gaussian/
 visualize/visualize_stats.py
