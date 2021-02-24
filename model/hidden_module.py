@@ -38,10 +38,12 @@ class HiddenPerturb(nn.Module):
                         sgn_mask = grad_mask.data.sign()
 
                     self.adv_noise.data = self.adv_noise + sgn_mask * self.eta * self.alpha_coeff
+                    self.lower_limit = lower_limit if self.input else x.amin((2,3)).view(x.shape[0], x.shape[1], 1, 1)
+                    self.upper_limit = upper_limit if self.input else x.amax((2,3)).view(x.shape[0], x.shape[1], 1, 1)
 
-                    if self.input:
-                        self.adv_noise.data = clamp(self.adv_noise, -self.eta, self.eta)
-                        self.adv_noise.data = clamp(self.adv_noise, lower_limit - x, upper_limit - x)
+                    # Adversarial constraint and Domain constraint
+                    self.adv_noise.data = clamp(self.adv_noise, -self.eta, self.eta)
+                    self.adv_noise.data = clamp(self.adv_noise, self.lower_limit - x, self.upper_limit - x)
 
                     self.adv_noise = self.adv_noise.detach()
                     x_hat = x + self.adv_noise
