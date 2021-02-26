@@ -14,7 +14,7 @@ import numpy as np
 
 import advertorch
 from model.resnet import PreActResNet18
-from model.wide_resnet import WideResNet28_10
+from model.wide_resnet import WideResNet_depth
 from model.hidden_module import std_t, lower_limit, upper_limit
 from utils.attack import attack_pgd
 from utils.utils import clamp, cos_by_uniform, cosine_similarity
@@ -36,11 +36,14 @@ class Solver(object):
         self.structure = config['model']['baseline']
 
         network = config['model'][self.data_name]
-        if network == 'ResNet':
+        if network == 'PRN':
             self.model = PreActResNet18(config).to(self.device)
             eta = config['model']['ResNet']['eta']
-        elif network == 'Wide_ResNet':
-            self.model = WideResNet28_10(config).to(self.device)
+        elif network == 'WRN28':
+            self.model = WideResNet_depth(config, 28).to(self.device)
+            eta = config['model']['ResNet']['eta']
+        elif network == 'WRN34':
+            self.model = WideResNet_depth(config, 34).to(self.device)
             eta = config['model']['ResNet']['eta']
         else:
             raise ValueError('Not implemented yet')
@@ -74,7 +77,6 @@ class Solver(object):
         # For adversarial robustness test
         self.epsilon = (eta/ 255.) / std_t
         self.pgd_alpha = (eta*0.25 / 255.) / std_t
-
 
     def _get_device(self):
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -135,7 +137,8 @@ class Solver(object):
 
             if self.schedule == 'cyclic' or (e+1) % self.val_epoch == 0:
                 print('Training time: {}'.format(training_time))
-                self._validation(e, advattack=True)
+                #self._validation(e, advattack=True)
+        self._validation(e, advattack=True)
 
         print('Training Finished.')
         print('taking snapshot ...')
@@ -269,13 +272,15 @@ class Solver(object):
                 # https://github.com/locuslab/fast_adversarial/blob/master/CIFAR10/train_pgd.py
                 delta = torch.zeros_like(x).to('cuda')
                 delta.requires_grad = True
-                for i in range(self.config['model']['PGD']['iters']):
+                it = self.config['model']['PGD']['iters']
+                for i in range(it):
                     output = self.model(x + delta)
                     loss = self.cen(output, y)
                     loss.backward()
 
                     grad = delta.grad.detach()
-                    delta.data = clamp(delta + self.pgd_alpha * torch.sign(grad), -self.epsilon, self.epsilon)
+                    alpha = 0.25*self.epsilon if it==7 else 0.5*self.epsilon
+                    delta.data = clamp(delta + alpha * torch.sign(grad), -self.epsilon, self.epsilon)
                     delta.data = clamp(delta, lower_limit - x, upper_limit - x)
                     delta.grad.zero_()
                 delta = delta.detach()

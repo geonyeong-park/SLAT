@@ -8,21 +8,7 @@ exp_setting:
 
 
 dataset:
-  name: 'CIFAR10'
-  MNIST:
-    name: 'MNIST'
-    batch_size: 256
-    input_size: 32
-    channel: 1
-    num_cls: 10
-    num_workers: 1
-  SVHN:
-    name: 'SVHN'
-    batch_size: 128
-    input_size: 32
-    channel: 3
-    num_cls: 10
-    num_workers: 1
+  name: 'CIFAR100'
   CIFAR10:
     name: 'CIFAR10'
     batch_size: 128
@@ -33,13 +19,24 @@ dataset:
     num_workers: 1
     mean: [0.4914, 0.4822, 0.4465]
     std: [0.2471, 0.2435, 0.2616]
+  CIFAR100:
+    name: 'CIFAR100'
+    batch_size: 128
+    input_size: 32
+    padding: 4
+    channel: 3
+    num_cls: 100
+    num_workers: 1
+    mean: [0.4914, 0.4822, 0.4465]
+    std: [0.2471, 0.2435, 0.2616]
 
 
 model:
   baseline: ['base', 'advGNI', 'advGNI_GA', 'Free', 'FGSM', 'CURE', 'PGD', 'FGSM_RS', 'FGSM_GA']
   evalmode: ['adv_attack', 'normal']
-  SVHN: 'ResNet'
-  CIFAR10: 'Wide_ResNet'
+  SVHN: 'PRN'
+  CIFAR10: 'WRN28'
+  CIFAR100: 'WRN34'
 
   ResNet:
     eta: 8 # eta/255. will be used following convention
@@ -51,7 +48,7 @@ model:
     replay: 8
   advGNI:
     alpha: 0.9
-    iters: 2
+    iters: 1
   advGNI_GA:
     alpha: 0.9
     iters: 2

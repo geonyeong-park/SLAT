@@ -100,11 +100,10 @@ def main(config, args):
     if args.PGD_iters is not None:
         print('PGD iters: {}'.format(args.PGD_iters))
         config['model']['PGD']['iters'] = args.PGD_iters
-    if args.advGNI_iters is not None:
+    if args.advGNI_iters is not None and args.model_structure == 'advGNI':
         print('{} iters: {}'.format(args.model_structure, args.advGNI_iters))
         config['model'][args.model_structure]['iters'] = args.advGNI_iters
     if args.alpha is not None:
-        assert 'advGNI' in structure
         print('Alpha for hidden layers: {}'.format(args.alpha))
         config['model'][structure]['alpha'] = args.alpha
     if args.GA_coeff is not None:

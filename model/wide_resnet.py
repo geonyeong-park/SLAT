@@ -97,7 +97,7 @@ class WideResNet(nn.Module):
             self.alpha = 0.
 
         self.noisy_module = nn.ModuleDict({
-            'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha, True),
+            'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha*1.2, True),
             'conv1': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
             'block1': HiddenPerturb(self.architecture, self.eta/255, self.alpha),
             'block2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
@@ -147,6 +147,6 @@ class WideResNet(nn.Module):
         out = out.view(-1, self.nChannels)
         return self.fc(out)
 
-def WideResNet28_10(config):
-    model = WideResNet(config, depth=28, widen_factor=10, dropRate=0.3)
+def WideResNet_depth(config, depth=28):
+    model = WideResNet(config, depth=depth, widen_factor=10, dropRate=0.3)
     return model
