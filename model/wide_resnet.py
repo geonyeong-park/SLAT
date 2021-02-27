@@ -97,7 +97,7 @@ class WideResNet(nn.Module):
             self.alpha = 0.
 
         self.noisy_module = nn.ModuleDict({
-            'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha*1.2, True),
+            'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha, True),
             'conv1': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
             'block1': HiddenPerturb(self.architecture, self.eta/255, self.alpha),
             'block2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),

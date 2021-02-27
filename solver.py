@@ -13,8 +13,9 @@ from math import sqrt, ceil
 import numpy as np
 
 import advertorch
-from model.resnet import PreActResNet18
+from model.preresnet import PreActResNet18
 from model.wide_resnet import WideResNet_depth
+from model.resnet import ResNet_depth
 from model.hidden_module import std_t, lower_limit, upper_limit
 from utils.attack import attack_pgd
 from utils.utils import clamp, cos_by_uniform, cosine_similarity
@@ -38,15 +39,17 @@ class Solver(object):
         network = config['model'][self.data_name]
         if network == 'PRN':
             self.model = PreActResNet18(config).to(self.device)
-            eta = config['model']['ResNet']['eta']
         elif network == 'WRN28':
             self.model = WideResNet_depth(config, 28).to(self.device)
-            eta = config['model']['ResNet']['eta']
         elif network == 'WRN34':
             self.model = WideResNet_depth(config, 34).to(self.device)
-            eta = config['model']['ResNet']['eta']
+        elif network == 'Res34':
+            self.model = ResNet_depth(config, 34).to(self.device)
+        elif network == 'Res50':
+            self.model = ResNet_depth(config, 50).to(self.device)
         else:
             raise ValueError('Not implemented yet')
+        eta = config['model']['ResNet']['eta']
 
         self.model_checkpoints_folder = config['exp_setting']['snapshot_dir']
         self.train_loader, self.valid_loader = self.dataset.get_data_loaders()

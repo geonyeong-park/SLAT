@@ -11,7 +11,7 @@ from utils.attack import attack_FGSM, attack_pgd, attack_black_simbaODS
 from utils.utils import clamp, lower_limit, upper_limit
 from visualize.visualize_land import compute_perturb, plot_perturb_plt, visualize_perturb
 #from model.wide_resnet import WideResNet28_10, WideResNet
-from model.resnet import PreActResNet18
+from model.preresnet import PreActResNet18
 from autoattack import AutoAttack
 
 
