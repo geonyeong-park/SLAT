@@ -36,7 +36,7 @@ model:
   evalmode: ['adv_attack', 'normal']
   SVHN: 'PRN'
   CIFAR10: 'WRN28'
-  CIFAR100: 'Res34'
+  CIFAR100: 'WRN28'
 
   ResNet:
     eta: 8 # eta/255. will be used following convention
@@ -51,7 +51,7 @@ model:
     iters: 1
   advGNI_GA:
     alpha: 0.9
-    iters: 2
+    iters: 1
 
 train:
   num_epochs:
