@@ -25,7 +25,7 @@ def get_arguments():
     parser.add_argument("--dataset_name", type=str, default=None, required=False,
                         help="")
     parser.add_argument("--model_structure", type=str, default='advGNI', required=True,
-                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA'")
+                        help="'base', 'advGNI', 'advGNI_GA', 'Free', 'CURE', 'PGD', 'FGSM', 'FGSM_RS', 'FGSM_GA', 'yopo', 'FGSM_ckpt'")
     parser.add_argument("--resume", type=str, default=None,
                         required=False, help="")
     parser.add_argument("--no_auto", default=False, action='store_true',
@@ -92,7 +92,7 @@ def main(config, args):
         assert args.schedule == 'cyclic' or args.schedule == 'multistep'
         config['optimizer']['schedule'] = args.schedule
     if args.resume is not None:
-        checkpoint = torch.load(args.resume)
+        checkpoint = torch.load(args.resume, map_location='cuda:0')
         print('load {}'.format(args.resume))
     if args.eta is not None:
         print('Eta: ', args.eta)
@@ -138,7 +138,7 @@ def main(config, args):
     else:
         auto=False if args.no_auto else True
         BB_ckpt = torch.load('snapshots/BlackBox_eps8_PGD7/pretrain.pth')
-        eval(solver, checkpoint, BB_ckpt, config['model']['ResNet']['eta'], auto)
+        eval(solver, checkpoint, BB_ckpt, config['model']['ResNet']['eta'], auto, structure)
 
 
 

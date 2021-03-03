@@ -8,7 +8,7 @@ exp_setting:
 
 
 dataset:
-  name: 'CIFAR100'
+  name: 'CIFAR10'
   CIFAR10:
     name: 'CIFAR10'
     batch_size: 128

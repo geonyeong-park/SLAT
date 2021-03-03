@@ -15,7 +15,7 @@ from model.preresnet import PreActResNet18
 from autoattack import AutoAttack
 
 
-def eval(solver, checkpoint, BB_ckpt, eps, auto):
+def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
     """
     (1) Visualize loss landscape
     (2) Visualize accumulated penultimate feature
@@ -24,6 +24,11 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto):
     """
     torch.manual_seed(0)
     np.random.seed(0)
+
+    if structure == 'yopo':
+        """ Comment out if the structure is not YOPO """
+        from model.yopo_resnet import WideResNet as WRNYOPO
+        solver.model = WRNYOPO(28, solver.num_cls)
 
     solver.model.load_state_dict(checkpoint['model'])
     solver.model.eval()
