@@ -91,20 +91,20 @@ class ResNet(nn.Module):
 
         self.noisy_module = nn.ModuleDict({
             'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha, True),
-            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
-            'block1': HiddenPerturb(self.architecture, self.eta/255, self.alpha),
-            'block2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
-            'block3': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
-            'block4': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            'conv1': HiddenPerturb(self.architecture, self.eta/255., 2.*self.alpha),
+            'block1': HiddenPerturb(self.architecture, self.eta/255, 2.*self.alpha),
+            #'block2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            #'block3': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            #'block4': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
         })
 
         self.grads = {
             'input': None,
             'conv1': None,
             'block1': None,
-            'block2': None,
-            'block3': None,
-            'block4': None,
+            #'block2': None,
+            #'block3': None,
+            #'block4': None,
         }
 
     def save_grad(self, name):
@@ -136,19 +136,25 @@ class ResNet(nn.Module):
         h = self.noisy_module['block1'](h, self.grads['block1'], add_adv, init_hidden)
 
         h = self.layer2(h)
+        """
         if hook:
             h.register_hook(self.save_grad('block2'))
         h = self.noisy_module['block2'](h, self.grads['block2'], add_adv, init_hidden)
+        """
 
         h = self.layer3(h)
+        """
         if hook:
             h.register_hook(self.save_grad('block3'))
         h = self.noisy_module['block3'](h, self.grads['block3'], add_adv, init_hidden)
+        """
 
         h = self.layer4(h)
+        """
         if hook:
             h.register_hook(self.save_grad('block4'))
         h = self.noisy_module['block4'](h, self.grads['block4'], add_adv, init_hidden)
+        """
 
         out = F.avg_pool2d(h, 4)
         out = out.view(out.size(0), -1)
