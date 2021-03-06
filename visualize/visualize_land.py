@@ -54,7 +54,8 @@ def plot_perturb_plt(rx, ry, zs, save_path, eps,
                      xlabel=None, ylabel=None, zlabel=None,
                      xlabel_rotation=0, ylabel_rotation=0, zlabel_rotation=0,
                      view_azimuth=230, view_altitude=30,
-                     light_azimuth=315, light_altitude=45, light_exag=0) :
+                     light_azimuth=315, light_altitude=45, light_exag=0,
+                     random=False) :
 
     xs, ys = np.meshgrid(rx, ry)
 
@@ -107,7 +108,10 @@ def plot_perturb_plt(rx, ry, zs, save_path, eps,
     ax.tick_params(axis='y', pad=tick_pad_y)
     ax.tick_params(axis='z', pad=tick_pad_z)
 
-    plt.savefig(save_path('loss_landscape'), format='png', dpi=300)
+    if not random:
+        plt.savefig(save_path('loss_landscape'), format='png', dpi=300)
+    else:
+        plt.savefig(save_path('loss_landscape_rademacher'), format='png', dpi=300)
     print('saved loss landscape')
 
 def visualize_perturb(model, x, y, epsilon, step, iter, path):

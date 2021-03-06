@@ -8,32 +8,26 @@ Gfake_cyc=(0.1 1)
 END
 
 pgditer=0
-adviter=1
 if [ "$2" == "PGD" ]; then
     pgditer=$3
 fi
 
-if [ "$2" == "advGNI" ]; then
-    adviter=$3
-fi
 eps_list=( 8 )
 
 for seed in {1..4}; do
     for eps in ${eps_list[@]}; do
         if [ "$2" == "PGD" ]; then
-            expname="CIFAR100_eps"$eps"_"$2""$pgditer"_alpha_seed"${seed}""
-        elif [ "$2" == "advGNI" ]; then
-            expname="CIFAR100_eps"$eps"_"$2""$adviter"_alpha_seed"${seed}""
+            expname="Tiny_eps"$eps"_"$2""$pgditer"_alpha_seed"${seed}""
         else
-            expname="CIFAR100_eps"$eps"_"$2"_seed"${seed}""
+            expname="Tiny_eps"$eps"_"$2"_seed"${seed}""
         fi
 
         if [ "$2" == "Free" ]; then
-            CUDA_VISIBLE_DEVICES=$1 python3 main.py --gpu $1 --dataset_name 'CIFAR100' --model_structure $2 \
+            CUDA_VISIBLE_DEVICES=$1 python3 main.py --gpu $1 --dataset_name 'TinyImageNet' --model_structure $2 \
                 --exp_name "$expname" --eta $eps --PGD_iters $pgditer --num_epochs 72
                         else
-            CUDA_VISIBLE_DEVICES=$1 python3 main.py --gpu $1 --dataset_name 'CIFAR100' --model_structure $2 \
-                --exp_name "$expname" --eta $eps --PGD_iters $pgditer --advGNI_iters $adviter
+            CUDA_VISIBLE_DEVICES=$1 python3 main.py --gpu $1 --dataset_name 'TinyImageNet' --model_structure $2 \
+                --exp_name "$expname" --eta $eps --PGD_iters $pgditer
         fi
     done
 done

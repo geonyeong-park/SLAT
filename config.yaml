@@ -29,7 +29,16 @@ dataset:
     num_workers: 1
     mean: [0.4914, 0.4822, 0.4465]
     std: [0.2471, 0.2435, 0.2616]
-
+  TinyImageNet:
+    name: 'TinyImageNet'
+    batch_size: 64
+    input_size: 64
+    padding: 4
+    channel: 3
+    num_cls: 200
+    num_workers: 1
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
 
 model:
   baseline: ['base', 'advGNI', 'advGNI_GA', 'Free', 'FGSM', 'CURE', 'PGD', 'FGSM_RS', 'FGSM_GA']
@@ -37,6 +46,7 @@ model:
   SVHN: 'PRN'
   CIFAR10: 'WRN28'
   CIFAR100: 'WRN28'
+  TinyImageNet: 'WRN28'
 
   ResNet:
     eta: 8 # eta/255. will be used following convention

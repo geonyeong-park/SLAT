@@ -25,11 +25,6 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
     torch.manual_seed(0)
     np.random.seed(0)
 
-    if structure == 'yopo':
-        """ Comment out if the structure is not YOPO """
-        from model.yopo_resnet import WideResNet as WRNYOPO
-        solver.model = WRNYOPO(28, solver.num_cls)
-
     solver.model.load_state_dict(checkpoint['model'])
     solver.model.eval()
     solver.model.to('cuda')
@@ -83,6 +78,19 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
             print('computed adversarial loss landscape')
             plot_perturb_plt(rx, ry, zs, png_path, eps,
                              xlabel='Adv', ylabel='Rad',)
+
+            if 'advGNI' in structure:
+                rademacher_vec1 = 2.*(torch.randint(2, size=adv_vec.shape)-1.) * solver.epsilon.data.cpu()
+                rademacher_vec2 = 2.*(torch.randint(2, size=adv_vec.shape)-1.) * solver.epsilon.data.cpu()
+                rx, ry, zs = compute_perturb(model=solver.model,
+                                    image=x_, label=y_,
+                                    vec_x=rademacher_vec1, vec_y=rademacher_vec2,
+                                    range_x=(-1,1), range_y=(-1,1),
+                                    grid_size=50,
+                                    loss=nn.CrossEntropyLoss(reduction='none'))
+                print('computed adversarial loss landscape for both rademacher axis')
+                plot_perturb_plt(rx, ry, zs, png_path, eps,
+                                xlabel='Adv', ylabel='Rad', random=True)
 
         # -------------------------
         # (2) Visualize accumulated perturbation

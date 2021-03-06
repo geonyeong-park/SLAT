@@ -147,7 +147,8 @@ class WideResNet(nn.Module):
         """
 
         out = self.relu(self.bn1(h))
-        out = F.avg_pool2d(out, 8)
+        #out = F.avg_pool2d(out, 8)
+        out = F.adaptive_avg_pool2d(out, 1)
         out = out.view(-1, self.nChannels)
         return self.fc(out)
 
