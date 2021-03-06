@@ -9,8 +9,6 @@ from model.hidden_module import HiddenPerturb
 # https://github.com/locuslab/fast_adversarial/tree/master/CIFAR10
 
 class PreActResNet(nn.Module):
-    add_adv = False
-    hook = False
     def __init__(self, block, num_blocks, config):
         super(PreActResNet, self).__init__()
 
@@ -38,20 +36,20 @@ class PreActResNet(nn.Module):
 
         self.noisy_module = nn.ModuleDict({
             'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha, True),
-            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
-            'layer1': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
-            'layer2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
-            'layer3': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
-            'layer4': HiddenPerturb(self.architecture, self.eta/255., self.alpha)
+            'conv1': HiddenPerturb(self.architecture, self.eta/255., 2.*self.alpha),
+            'layer1': HiddenPerturb(self.architecture, self.eta/255., 2.*self.alpha),
+            #'layer2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            #'layer3': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            #'layer4': HiddenPerturb(self.architecture, self.eta/255., self.alpha)
         })
 
         self.grads = {
             'input': None,
             'conv1': None,
             'layer1': None,
-            'layer2': None,
-            'layer3': None,
-            'layer4': None,
+            #'layer2': None,
+            #'layer3': None,
+            #'layer4': None,
         }
 
     def save_grad(self, name):
@@ -67,36 +65,39 @@ class PreActResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x, add_adv=False, hook=False):
-        PreActResNet.hook = hook
-        PreActResNet.add_adv = add_adv
-
-        x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv)
+    def forward(self, x, add_adv=False, hook=False, init_hidden=False):
+        x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv, init_hidden)
 
         h = self.conv1(x_hat)
         if hook:
             h.register_hook(self.save_grad('conv1'))
-        h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv)
+        h = self.noisy_module['conv1'](h, self.grads['conv1'], add_adv, init_hidden)
 
         h = self.layer1(h)
         if hook:
             h.register_hook(self.save_grad('layer1'))
-        h = self.noisy_module['layer1'](h, self.grads['layer1'], add_adv)
+        h = self.noisy_module['layer1'](h, self.grads['layer1'], add_adv, init_hidden)
 
         h = self.layer2(h)
+        """
         if hook:
             h.register_hook(self.save_grad('layer2'))
-        h = self.noisy_module['layer2'](h, self.grads['layer2'], add_adv)
+        h = self.noisy_module['layer2'](h, self.grads['layer2'], add_adv, init_hidden)
+        """
 
         h = self.layer3(h)
+        """
         if hook:
             h.register_hook(self.save_grad('layer3'))
-        h = self.noisy_module['layer3'](h, self.grads['layer3'], add_adv)
+        h = self.noisy_module['layer3'](h, self.grads['layer3'], add_adv, init_hidden)
+        """
 
         h = self.layer4(h)
+        """
         if hook:
             h.register_hook(self.save_grad('layer4'))
-        h = self.noisy_module['layer4'](h, self.grads['layer4'], add_adv)
+        h = self.noisy_module['layer4'](h, self.grads['layer4'], add_adv, init_hidden)
+        """
 
         h = F.relu(self.bn(h))
         h = F.avg_pool2d(h, 4)

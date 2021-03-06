@@ -45,7 +45,7 @@ model:
   evalmode: ['adv_attack', 'normal']
   SVHN: 'PRN'
   CIFAR10: 'WRN28'
-  CIFAR100: 'Res50'
+  CIFAR100: 'PRN'
   TinyImageNet: 'WRN28'
 
   ResNet:
