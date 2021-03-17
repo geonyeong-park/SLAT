@@ -62,6 +62,7 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
         # -------------------------
         # (1) Visualize loss landscape
         # -------------------------
+        """
         if i == 0:
             adv_vec = attack_FGSM(solver.model, x, y, solver.epsilon, clamp_=False)
             adv_vec = adv_vec[0]
@@ -96,6 +97,7 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
         # (2) Visualize accumulated perturbation
         # -------------------------
             visualize_perturb(solver.model, x, y, 20, 1.5, 50, png_path)
+            """
 
         # -------------------------
         # (3) Adversarial robustness test

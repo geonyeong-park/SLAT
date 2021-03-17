@@ -98,8 +98,8 @@ class WideResNet(nn.Module):
 
         self.noisy_module = nn.ModuleDict({
             'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha, True),
-            'conv1': HiddenPerturb(self.architecture, self.eta/255., 2.*self.alpha),
-            'block1': HiddenPerturb(self.architecture, self.eta/255, 2.*self.alpha),
+            'conv1': HiddenPerturb(self.architecture, self.eta/255., self.alpha*2),
+            'block1': HiddenPerturb(self.architecture, self.eta/255, self.alpha*2),
             #'block2': HiddenPerturb(self.architecture, self.eta/255., 3.*self.alpha),
             #'block3': HiddenPerturb(self.architecture, self.eta/255., 3.*self.alpha),
         })
@@ -133,16 +133,16 @@ class WideResNet(nn.Module):
         h = self.noisy_module['block1'](h, self.grads['block1'], add_adv, init_hidden)
 
         h = self.block2(h)
-        """
         if hook:
             h.register_hook(self.save_grad('block2'))
+        """
         h = self.noisy_module['block2'](h, self.grads['block2'], add_adv, init_hidden)
         """
 
         h = self.block3(h)
-        """
         if hook:
             h.register_hook(self.save_grad('block3'))
+        """
         h = self.noisy_module['block3'](h, self.grads['block3'], add_adv, init_hidden)
         """
 

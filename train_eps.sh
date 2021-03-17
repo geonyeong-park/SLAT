@@ -14,7 +14,7 @@ fi
 
 eps_list=( 8 )
 
-for seed in {1..4}; do
+for seed in {2..4}; do
     for eps in ${eps_list[@]}; do
         if [ "$2" == "PGD" ]; then
             expname="Tiny_eps"$eps"_"$2""$pgditer"_alpha_seed"${seed}""

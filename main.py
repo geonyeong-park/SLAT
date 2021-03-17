@@ -35,6 +35,7 @@ def get_arguments():
     parser.add_argument("--eta", type=float, default=None,
                         required=False, help="Variance")
     parser.add_argument("--PGD_iters", default=None, type=int, required=False, help="")
+    parser.add_argument("--batch_size", default=None, type=int, required=False, help="")
     parser.add_argument("--advGNI_iters", default=None, type=int, required=False, help="")
     parser.add_argument("--alpha", default=None, type=float, required=False, help="")
     parser.add_argument("--GA_coeff", default=None, type=float, required=False, help="")
@@ -100,6 +101,9 @@ def main(config, args):
     if args.PGD_iters is not None:
         print('PGD iters: {}'.format(args.PGD_iters))
         config['model']['PGD']['iters'] = args.PGD_iters
+    if args.batch_size is not None:
+        dataset_name = config['dataset']['name']
+        config['dataset'][dataset_name]['batch_size'] = args.batch_size
     if args.advGNI_iters is not None and args.model_structure == 'advGNI':
         print('{} iters: {}'.format(args.model_structure, args.advGNI_iters))
         config['model'][args.model_structure]['iters'] = args.advGNI_iters

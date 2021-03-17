@@ -93,7 +93,7 @@ class ResNet(nn.Module):
             'input': HiddenPerturb(self.architecture, self.eta/255., self.alpha, True),
             'conv1': HiddenPerturb(self.architecture, self.eta/255., 2.*self.alpha),
             'block1': HiddenPerturb(self.architecture, self.eta/255, 2.*self.alpha),
-            #'block2': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
+            'block2': HiddenPerturb(self.architecture, self.eta/255., 2.*self.alpha),
             #'block3': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
             #'block4': HiddenPerturb(self.architecture, self.eta/255., self.alpha),
         })
@@ -102,7 +102,7 @@ class ResNet(nn.Module):
             'input': None,
             'conv1': None,
             'block1': None,
-            #'block2': None,
+            'block2': None,
             #'block3': None,
             #'block4': None,
         }
@@ -136,11 +136,9 @@ class ResNet(nn.Module):
         h = self.noisy_module['block1'](h, self.grads['block1'], add_adv, init_hidden)
 
         h = self.layer2(h)
-        """
         if hook:
             h.register_hook(self.save_grad('block2'))
         h = self.noisy_module['block2'](h, self.grads['block2'], add_adv, init_hidden)
-        """
 
         h = self.layer3(h)
         """

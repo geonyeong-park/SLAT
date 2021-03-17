@@ -11,6 +11,7 @@ from model.hidden_module import HiddenPerturb
 class PreActResNet(nn.Module):
     def __init__(self, block, num_blocks, config):
         super(PreActResNet, self).__init__()
+        print('Load PreAct')
 
         self.config = config
         self.data_name = config['dataset']['name']
@@ -67,6 +68,8 @@ class PreActResNet(nn.Module):
 
     def forward(self, x, add_adv=False, hook=False, init_hidden=False):
         x_hat = self.noisy_module['input'](x, self.grads['input'], add_adv, init_hidden)
+        if hook:
+            x_hat.register_hook(self.save_grad('input'))
 
         h = self.conv1(x_hat)
         if hook:

@@ -80,3 +80,18 @@ def attack_FGSM(model, x, y, epsilon, clamp_=True):
     adv_noise = adv_noise.detach()
 
     return adv_noise
+
+def attack_random_FGSM(model, x, y, epsilon, alpha) :
+    images_new = x + alpha*torch.randn_like(x).sign()
+    x.requires_grad = True
+
+    outputs = model(images_new)
+
+    model.zero_grad()
+    cost = nn.CrossEntropyLoss()(outputs, y).to('cuda')
+    cost.backward()
+
+    attack_images = images_new + (epsilon-alpha)*x.grad.sign()
+    attack_images.data = clamp(attack_images, lower_limit, upper_limit)
+
+    return attack_images

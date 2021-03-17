@@ -17,7 +17,7 @@ from model.preresnet import PreActResNet18
 from model.wide_resnet import WideResNet_depth
 from model.resnet import ResNet_depth
 from model.hidden_module import std_t, lower_limit, upper_limit
-from utils.attack import attack_pgd
+from utils.attack import attack_pgd, attack_FGSM, attack_random_FGSM
 from utils.utils import clamp, cos_by_uniform, cosine_similarity
 
 
@@ -43,10 +43,9 @@ class Solver(object):
             self.model = WideResNet_depth(config, 28).to(self.device)
         elif network == 'WRN34':
             self.model = WideResNet_depth(config, 34).to(self.device)
-        elif network == 'Res34':
-            self.model = ResNet_depth(config, 34).to(self.device)
-        elif network == 'Res50':
-            self.model = ResNet_depth(config, 50).to(self.device)
+        elif 'Res' in network:
+            depth = int(network.split('Res')[-1])
+            self.model = ResNet_depth(config, depth).to(self.device)
         else:
             raise ValueError('Not implemented yet')
         eta = config['model']['ResNet']['eta']
@@ -74,6 +73,7 @@ class Solver(object):
         self.log_loss['val_loss'] = []
         self.log_loss['val_cos'] = []
         self.log_loss['val_norm'] = []
+        self.log_loss['val_delta'] = []
         self.log_loss['training_time'] = 0.
         self.val_epoch = 10 if self.structure != 'Free' else 1
 
@@ -129,6 +129,7 @@ class Solver(object):
         n_iter = 0
         training_time = 0
         self.prev_adv_acc = 0.
+        #self._validation(0, advattack=True)
 
         for e in range(self.epochs):
             start = timer()
@@ -141,7 +142,6 @@ class Solver(object):
             if self.schedule == 'cyclic' or (e+1) % self.val_epoch == 0:
                 print('Training time: {}'.format(training_time))
                 #self._validation(e, advattack=True)
-        self._validation(e, advattack=True)
 
         print('Training Finished.')
         print('taking snapshot ...')
@@ -153,6 +153,8 @@ class Solver(object):
             self.log_loss['training_time'] = training_time
             pkl.dump(self.log_loss, f, pkl.HIGHEST_PROTOCOL)
         print('Finished, elapsed time: {}'.format(training_time))
+
+        self._validation(e, advattack=True)
 
     def _train_epoch(self, epoch, n_iter):
         for i, (x, y) in enumerate(self.train_loader):
@@ -348,6 +350,7 @@ class Solver(object):
         valid_loss = 0.
         valid_acc = 0.
         valid_cos = 0.
+        valid_delta = 0.
         valid_norm = {
             'input': 0.,
             'conv1': 0.,
@@ -365,8 +368,14 @@ class Solver(object):
             if advattack:
                 with torch.enable_grad():
                     pgd_delta = attack_pgd(self.model, x, y, self.epsilon, self.pgd_alpha, attack_iters, restarts)
+                    fgsm_delta = attack_FGSM(self.model, x, y, self.epsilon)
+                    rfgsm_img = attack_random_FGSM(self.model, x, y, self.epsilon, self.epsilon/2.)
                 with torch.no_grad():
                     logit = self.model(clamp(x + pgd_delta[:x.size(0)], lower_limit, upper_limit))
+                    fgsm_logit = self.model(clamp(x + fgsm_delta[:x.size(0)], lower_limit, upper_limit))
+                    rfgsm_logit = self.model(rfgsm_img)
+                    delta = torch.sum(torch.norm(fgsm_logit-rfgsm_logit, dim=1))
+                    valid_delta += delta.data.cpu().numpy()
             else:
                 logit = self.model(x)
             loss = self.cen(logit, y)
@@ -402,13 +411,16 @@ class Solver(object):
         valid_loss /= counter
         valid_acc /= counter
         valid_cos /= num_batch
+        if advattack: valid_delta /= counter
         for k in self.model.grads.keys(): valid_norm[k] = valid_norm[k] / num_batch
 
         if advattack:
             self.log_loss['val_loss'].append(valid_loss)
             self.log_loss['val_acc'].append(valid_acc)
             self.log_loss['val_cos'].append(valid_cos)
+            self.log_loss['val_delta'].append(valid_delta)
             self.log_loss['val_norm'].append(valid_norm)
+            print('L2(FGSM, R+FGSM): {}'.format(valid_delta))
 
         if epoch == None: epoch='Test'
         print('[{}/PGD attack {}]: Acc={:.5f}, Loss={:.3f}, Cos={:.2f}, LR={:.5f}'.format(epoch, advattack,
