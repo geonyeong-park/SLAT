@@ -12,7 +12,6 @@ from timeit import default_timer as timer
 from math import sqrt, ceil
 import numpy as np
 
-import advertorch
 from model.preresnet import PreActResNet18
 from model.wide_resnet import WideResNet_depth
 from model.resnet import ResNet_depth

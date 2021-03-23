@@ -15,7 +15,7 @@ from model.preresnet import PreActResNet18
 from autoattack import AutoAttack
 
 
-def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
+def eval(solver, checkpoint, eps, auto, structure):
     """
     (1) Visualize loss landscape
     (2) Visualize accumulated penultimate feature
@@ -29,9 +29,6 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
     solver.model.eval()
     solver.model.to('cuda')
 
-    #BB_model = WideResNet28_10(solver.config).to('cuda')
-    #BB_model.load_state_dict(BB_ckpt['model'])
-    #BB_model.eval()
     auto_adversary = AutoAttack(AutoWrapper(solver.model), norm='Linf', eps=eps/255., version='standard')
     mu_, std_ = torch.tensor(mean).float(), torch.tensor(std).float()
     denorm = transforms.Normalize((-mu_/std_).tolist(), (1./std_).tolist())
@@ -62,7 +59,6 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
         # -------------------------
         # (1) Visualize loss landscape
         # -------------------------
-        """
         if i == 0:
             adv_vec = attack_FGSM(solver.model, x, y, solver.epsilon, clamp_=False)
             adv_vec = adv_vec[0]
@@ -97,7 +93,6 @@ def eval(solver, checkpoint, BB_ckpt, eps, auto, structure):
         # (2) Visualize accumulated perturbation
         # -------------------------
             visualize_perturb(solver.model, x, y, 20, 1.5, 50, png_path)
-            """
 
         # -------------------------
         # (3) Adversarial robustness test

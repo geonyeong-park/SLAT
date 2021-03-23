@@ -141,8 +141,7 @@ def main(config, args):
         solver.train()
     else:
         auto=False if args.no_auto else True
-        BB_ckpt = torch.load('snapshots/BlackBox_eps8_PGD7/pretrain.pth')
-        eval(solver, checkpoint, BB_ckpt, config['model']['ResNet']['eta'], auto, structure)
+        eval(solver, checkpoint, config['model']['ResNet']['eta'], auto, structure)
 
 
 
