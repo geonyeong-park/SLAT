@@ -11,3 +11,6 @@ gaussian/
 gaussian/
 visualize/visualize_stats.py
 model/yopo_resnet.py
+*.sh
+*.ipynb
+Visualize.py
